@@ -1,0 +1,8 @@
+# python
+_pycache_/
+.python/
+env/
+venv/
+.venv/
+build/
+.env
