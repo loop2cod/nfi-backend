@@ -9,12 +9,14 @@ A comprehensive multi-tenant neo banking platform with 4-tier architecture, role
 ### Architecture Tiers
 
 1. **Platform (Tier 0)**: Super Admin Dashboard
+
    - Platform owner and administrators
    - System configuration and monitoring
    - Company/Bank onboarding
    - Billing and subscription management
 
 2. **Client (Tier 1)**: Company/Bank Dashboard
+
    - Company/Bank administrators and staff
    - Sub-client management
    - KYT configuration
@@ -22,6 +24,7 @@ A comprehensive multi-tenant neo banking platform with 4-tier architecture, role
    - End-user oversight
 
 3. **SubClient (Tier 2)**: Financial Institution Dashboard
+
    - Financial institution operations
    - Customer management
    - Transaction registration
@@ -37,6 +40,7 @@ A comprehensive multi-tenant neo banking platform with 4-tier architecture, role
 ## Features
 
 ### Authentication & Authorization
+
 - **JWT Authentication**: Secure token-based authentication with refresh tokens
 - **Role-Based Access Control (RBAC)**: 11 predefined roles with granular permissions
 - **Multi-Tenant Support**: Hierarchical tenant management (Platform → Client → SubClient → End User)
@@ -44,19 +48,22 @@ A comprehensive multi-tenant neo banking platform with 4-tier architecture, role
 - **OAuth2 Compatible**: Industry-standard authentication flow
 
 ### User Management
+
 - Multi-tier user hierarchy
 - Role assignment and permission management
 - User status management (active, inactive, suspended, pending_kyc)
 - Email verification system
-- KYC integration ready (Sumsub & Onfido)
+- KYC integration ready (Sumsub & Onfido(entrust))
 
 ### Banking Operations
+
 - Account Management (savings, checking, business)
 - Transaction Processing (deposits, withdrawals, transfers, payments)
 - Card Issuance (debit, credit, virtual)
 - Multi-currency wallet support
 
 ### Security Features
+
 - Token-based authentication (access + refresh tokens)
 - Password hashing with bcrypt
 - Role and permission-based access control
@@ -66,21 +73,26 @@ A comprehensive multi-tenant neo banking platform with 4-tier architecture, role
 ## User Roles & Permissions
 
 ### Platform Tier (Tier 0)
+
 - **super_admin**: Full platform access, system configuration, billing
 - **admin_staff**: Platform monitoring and reporting
 - **admin_officer**: Operational platform management
+- **admin_accounts**: Operational accounting and management
 
 ### Client Tier (Tier 1)
+
 - **client_admin**: Company/Bank administrator, full client control
 - **client_officer**: Operations management, KYC approval
 - **client_staff**: Basic operations and reporting
 - **client_accounts**: Financial operations and accounting
 
 ### SubClient Tier (Tier 2)
+
 - **subclient_admin**: Financial institution administrator
 - **subclient_staff**: Customer service and support
 
 ### End User Tier (Tier 3)
+
 - **end_user**: Individual customer with personal banking access
 
 ## Project Structure
@@ -124,11 +136,13 @@ python -m venv venv
 ### 2. Activate the virtual environment
 
 **Windows:**
+
 ```bash
 venv\Scripts\activate
 ```
 
 **Linux/Mac:**
+
 ```bash
 source venv/bin/activate
 ```
@@ -146,6 +160,7 @@ cp .env.example .env
 ```
 
 Edit `.env` and update the following:
+
 - `SECRET_KEY`: Generate a secure secret key (min 32 characters)
 - `SUMSUB_API_KEY`: Your Sumsub API key (if using KYC)
 - `ONFIDO_API_TOKEN`: Your Onfido API token (if using KYC)
@@ -159,6 +174,7 @@ uvicorn main:app --reload
 ```
 
 The API will be available at:
+
 - **Base URL**: http://localhost:8000
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
@@ -166,6 +182,7 @@ The API will be available at:
 ## API Endpoints
 
 ### Authentication (`/api/v1/auth`)
+
 - `POST /register` - Register a new user
 - `POST /login` - Login and get access tokens
 - `POST /refresh` - Refresh access token
@@ -174,6 +191,7 @@ The API will be available at:
 - `GET /me` - Get current user information
 
 ### RBAC & Permissions (`/api/v1/rbac`)
+
 - `GET /roles` - Get all available roles
 - `GET /permissions` - Get all permissions (Super Admin only)
 - `GET /role/{role}/permissions` - Get permissions for a specific role
@@ -183,6 +201,7 @@ The API will be available at:
 - `GET /hierarchy` - Get platform hierarchy structure
 
 ### Users (`/api/v1/users`)
+
 - `POST /` - Create a new user (requires authentication)
 - `GET /` - Get all users
 - `GET /{user_id}` - Get user by ID
@@ -190,6 +209,7 @@ The API will be available at:
 - `DELETE /{user_id}` - Delete user
 
 ### Accounts (`/api/v1/accounts`)
+
 - `POST /` - Create a new account
 - `GET /` - Get all accounts (filter by user_id)
 - `GET /{account_id}` - Get account by ID
@@ -199,6 +219,7 @@ The API will be available at:
 - `DELETE /{account_id}` - Close account
 
 ### Transactions (`/api/v1/transactions`)
+
 - `POST /` - Create a new transaction
 - `GET /` - Get all transactions (filter by account_id)
 - `GET /{transaction_id}` - Get transaction by ID
@@ -206,6 +227,7 @@ The API will be available at:
 - `PATCH /{transaction_id}/cancel` - Cancel transaction
 
 ### Cards (`/api/v1/cards`)
+
 - `POST /` - Issue a new card
 - `GET /` - Get all cards (filter by account_id)
 - `GET /{card_id}` - Get card by ID
@@ -242,6 +264,7 @@ curl -X POST "http://localhost:8000/api/v1/auth/login" \
 ```
 
 Response:
+
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIs...",
@@ -354,6 +377,7 @@ See `/api/v1/rbac/access-matrix` for the complete permission matrix.
 ### Production Deployment
 
 1. **Change SECRET_KEY**: Generate a strong random secret key
+
    ```python
    import secrets
    secrets.token_urlsafe(32)
@@ -362,6 +386,7 @@ See `/api/v1/rbac/access-matrix` for the complete permission matrix.
 2. **Use HTTPS**: Always use SSL/TLS in production
 
 3. **Configure CORS**: Restrict CORS origins to your frontend domains
+
    ```python
    CORS_ORIGINS=["https://yourdomain.com"]
    ```
@@ -379,6 +404,7 @@ See `/api/v1/rbac/access-matrix` for the complete permission matrix.
 ## Future Enhancements
 
 ### Planned Features
+
 - [ ] PostgreSQL/MongoDB database integration
 - [ ] Redis caching for tokens
 - [ ] Email verification system
@@ -395,6 +421,7 @@ See `/api/v1/rbac/access-matrix` for the complete permission matrix.
 - [ ] Advanced analytics
 
 ### Database Schema (When Implementing)
+
 - Users table with multi-tenant support
 - Tenants table (Clients & SubClients)
 - Accounts, Transactions, Cards tables
@@ -415,6 +442,7 @@ MIT License - See LICENSE file for details
 ## Contributing
 
 Contributions are welcome! Please follow these guidelines:
+
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
@@ -424,6 +452,7 @@ Contributions are welcome! Please follow these guidelines:
 ## Important Notes
 
 ⚠️ **Current Implementation**:
+
 - Uses in-memory storage (replace with database for production)
 - No email verification implemented yet
 - KYC providers not integrated yet
@@ -432,6 +461,7 @@ Contributions are welcome! Please follow these guidelines:
 - Basic error handling
 
 **For Production**:
+
 - Implement proper database (PostgreSQL recommended)
 - Add Redis for token storage and caching
 - Implement email verification
