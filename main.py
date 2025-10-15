@@ -102,7 +102,7 @@ async def health_check():
     """
     from app.db.connection import get_db
 
-    # Check database connection
+    # Check  connection
     try:
         db = get_db()
         db.fetch_value("SELECT 1")
