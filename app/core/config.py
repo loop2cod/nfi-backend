@@ -1,38 +1,32 @@
-from pydantic import BaseSettings
-from typing import Optional, List
+from pydantic_settings import BaseSettings
+from typing import Optional
+
 
 class Settings(BaseSettings):
-    """Application settings"""
-    # App
-    APP_NAME: str = "NFI Platform API"
-    APP_VERSION: str = "1.0.0"
-    DEBUG: bool = True
+    # Database
+    DATABASE_URL: str = "sqlite:///./nfi.db"
 
-    # Security
-    SECRET_KEY: str = "your-secret-key-here-change-in-production-min-32-chars"
+    # JWT
+    SECRET_KEY: str = "your-secret-key-here-change-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    # Database
-    DATABASE_URL: Optional[str] = None
-    DATABASE_TYPE: str = "sqlite"  # "sqlite" or "d1"
+    # Google OAuth
+    GOOGLE_CLIENT_ID: str = "83042478166-jmc7bpouu0jpqsp1dbkqtqfpi3ls46t9.apps.googleusercontent.com"
+    GOOGLE_CLIENT_SECRET: str = "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"
+    GOOGLE_REDIRECT_URI: str = "http://127.0.0.1:8000/auth/google/callback"
 
-    # Cloudflare D1 Configuration (when DATABASE_TYPE="d1")
-    D1_ACCOUNT_ID: Optional[str] = None
-    D1_DATABASE_ID: Optional[str] = None
-    D1_API_TOKEN: Optional[str] = None
+    # Sumsub KYC
+    SUMSUB_API_TOKEN: str = "pjRs8KgzcYmnOIr5hHGMKWJa.hHiMgM4qzVsbmJ4odl9Cj8PevEBwaTuP"  # Remove sbx: prefix
+    SUMSUB_API_SECRET: str = "mailMdNZRQT2QFeEkh2jlaDbJAFf9jfy"
+    SUMSUB_BASE_URL: str = "https://api.sandbox.sumsub.com"  # Use sandbox URL
 
     # CORS
-    CORS_ORIGINS: List[str] = ["*"]
-
-    # KYC Providers
-    SUMSUB_API_KEY: Optional[str] = None
-    SUMSUB_SECRET_KEY: Optional[str] = None
-    ONFIDO_API_TOKEN: Optional[str] = None
+    ALLOWED_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:3001"]
 
     class Config:
         env_file = ".env"
-        case_sensitive = True
+
 
 settings = Settings()

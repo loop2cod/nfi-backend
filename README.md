@@ -50,11 +50,6 @@ A comprehensive multi-tenant neo banking platform with 4-tier architecture, role
 - Email verification system
 - KYC integration ready (Sumsub & Onfido)
 
-### Banking Operations
-- Account Management (savings, checking, business)
-- Transaction Processing (deposits, withdrawals, transfers, payments)
-- Card Issuance (debit, credit, virtual)
-- Multi-currency wallet support
 
 ### Security Features
 - Token-based authentication (access + refresh tokens)
@@ -85,33 +80,7 @@ A comprehensive multi-tenant neo banking platform with 4-tier architecture, role
 
 ## Project Structure
 
-```
-nfi-backend/
-├── app/
-│   ├── api/
-│   │   ├── __init__.py
-│   │   ├── auth.py           # Authentication endpoints
-│   │   ├── rbac.py           # Role & permission management
-│   │   ├── users.py          # User management
-│   │   ├── accounts.py       # Account operations
-│   │   ├── transactions.py   # Transaction processing
-│   │   └── cards.py          # Card management
-│   ├── core/
-│   │   ├── config.py         # Application settings
-│   │   ├── security.py       # JWT & password utilities
-│   │   └── dependencies.py   # Auth dependencies & checkers
-│   └── models/
-│       ├── auth.py           # Auth models (login, tokens)
-│       ├── roles.py          # Roles & permissions definitions
-│       ├── user.py           # User models with multi-tenant support
-│       ├── account.py        # Account models
-│       ├── transaction.py    # Transaction models
-│       └── card.py           # Card models
-├── main.py                   # FastAPI application
-├── requirements.txt          # Python dependencies
-├── .env.example             # Environment variables template
-└── README.md                # This file
-```
+
 
 ## Installation
 
@@ -145,10 +114,17 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` and update the following:
-- `SECRET_KEY`: Generate a secure secret key (min 32 characters)
-- `SUMSUB_API_KEY`: Your Sumsub API key (if using KYC)
-- `ONFIDO_API_TOKEN`: Your Onfido API token (if using KYC)
+Edit the `.env` file with your Firebase credentials and other settings.
+
+### 5. Create Super Admin User
+
+After configuring Firebase credentials, run the script to create the initial super admin:
+
+```bash
+python create_super_admin.py
+```
+
+This will create a super admin user with the credentials specified in your `.env` file.
 
 ## Running the Application
 
@@ -162,172 +138,42 @@ The API will be available at:
 - **Base URL**: http://localhost:8000
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
+- **Health Check**: http://localhost:8000/health
 
-## API Endpoints
+## Platform Tier (Tier 0) API Endpoints
 
-### Authentication (`/api/v1/auth`)
-- `POST /register` - Register a new user
-- `POST /login` - Login and get access tokens
-- `POST /refresh` - Refresh access token
-- `POST /logout` - Logout and invalidate refresh token
-- `POST /change-password` - Change user password
-- `GET /me` - Get current user information
+### Authentication
+- `POST /auth/login` - Login with email/password
+- `POST /auth/refresh` - Refresh access token
+- `GET /auth/me` - Get current user info
 
-### RBAC & Permissions (`/api/v1/rbac`)
-- `GET /roles` - Get all available roles
-- `GET /permissions` - Get all permissions (Super Admin only)
-- `GET /role/{role}/permissions` - Get permissions for a specific role
-- `GET /my-permissions` - Get current user's permissions
-- `POST /check-permission` - Check if user has a permission
-- `GET /access-matrix` - Get complete role-permission matrix
-- `GET /hierarchy` - Get platform hierarchy structure
+### User Management (Super Admin Only)
+- `POST /auth/register` - Create new platform user
+- `PUT /auth/users/{email}` - Update user information
+- `DELETE /auth/users/{email}` - Delete user
 
-### Users (`/api/v1/users`)
-- `POST /` - Create a new user (requires authentication)
-- `GET /` - Get all users
-- `GET /{user_id}` - Get user by ID
-- `PUT /{user_id}` - Update user
-- `DELETE /{user_id}` - Delete user
+### User Management (Admin Roles)
+- `GET /auth/users` - List all platform users
 
-### Accounts (`/api/v1/accounts`)
-- `POST /` - Create a new account
-- `GET /` - Get all accounts (filter by user_id)
-- `GET /{account_id}` - Get account by ID
-- `GET /{account_id}/balance` - Get account balance
-- `PATCH /{account_id}/freeze` - Freeze account
-- `PATCH /{account_id}/activate` - Activate account
-- `DELETE /{account_id}` - Close account
-
-### Transactions (`/api/v1/transactions`)
-- `POST /` - Create a new transaction
-- `GET /` - Get all transactions (filter by account_id)
-- `GET /{transaction_id}` - Get transaction by ID
-- `GET /reference/{reference_number}` - Get by reference number
-- `PATCH /{transaction_id}/cancel` - Cancel transaction
-
-### Cards (`/api/v1/cards`)
-- `POST /` - Issue a new card
-- `GET /` - Get all cards (filter by account_id)
-- `GET /{card_id}` - Get card by ID
-- `PATCH /{card_id}/block` - Block a card
-- `PATCH /{card_id}/unblock` - Unblock a card
-- `DELETE /{card_id}` - Cancel a card
-
-## Usage Examples
-
-### 1. Register a Super Admin User
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/auth/register" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "admin@nfigate.com",
-    "first_name": "Super",
-    "last_name": "Admin",
-    "phone": "+1234567890",
-    "password": "SecurePass123!",
-    "role": "super_admin"
-  }'
-```
-
-### 2. Login
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/auth/login" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "admin@nfigate.com",
-    "password": "SecurePass123!"
-  }'
-```
-
-Response:
-```json
-{
-  "access_token": "eyJhbGciOiJIUzI1NiIs...",
-  "refresh_token": "eyJhbGciOiJIUzI1NiIs...",
-  "token_type": "bearer",
-  "expires_in": 1800,
-  "user": {...}
-}
-```
-
-### 3. Access Protected Endpoint
-
-```bash
-curl -X GET "http://localhost:8000/api/v1/auth/me" \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
-```
-
-### 4. Register a Client Admin
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/auth/register" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  -d '{
-    "email": "bank@example.com",
-    "first_name": "Bank",
-    "last_name": "Admin",
-    "phone": "+1234567891",
-    "password": "SecurePass123!",
-    "role": "client_admin",
-    "tenant_id": "client-uuid-123"
-  }'
-```
-
-### 5. Register an End User (under SubClient)
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/auth/register" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "customer@example.com",
-    "first_name": "John",
-    "last_name": "Doe",
-    "phone": "+1234567892",
-    "password": "SecurePass123!",
-    "role": "end_user",
-    "parent_id": "subclient-uuid-456"
-  }'
-```
-
-### 6. Check User Permissions
-
-```bash
-curl -X GET "http://localhost:8000/api/v1/rbac/my-permissions" \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
-```
-
-### 7. Get Platform Hierarchy
-
-```bash
-curl -X GET "http://localhost:8000/api/v1/rbac/hierarchy"
-```
 
 ## Multi-Tenant Architecture
 
 ### Tenant Hierarchy
 
 ```
-Platform (NFI)
-    ├── Client 1 (Bank A)
+Platform (NFI) - (Platform Owner with master DB)
+    ├── Client 1 (Bank A) - (Client with seperate DB)
     │   ├── SubClient 1.1 (Branch 1)
     │   │   ├── End User 1.1.1
     │   │   └── End User 1.1.2
     │   └── SubClient 1.2 (Branch 2)
     │       └── End User 1.2.1
-    └── Client 2 (Bank B)
+    └── Client 2 (Bank B) - (Client with seperate DB)
+        └── End User 2.1.1
         └── SubClient 2.1 (Branch 1)
             └── End User 2.1.1
 ```
 
-### Tenant Fields
-
-- **tenant_id**: Identifies the Client or SubClient the user belongs to
-- **parent_id**: References the parent in the hierarchy
-  - SubClient → parent_id = Client ID
-  - End User → parent_id = SubClient ID
 
 ## Permission System
 
@@ -346,103 +192,3 @@ The platform uses a comprehensive RBAC system with 40+ permissions across catego
 - Risk & alerts
 - API access
 - Audit & compliance
-
-See `/api/v1/rbac/access-matrix` for the complete permission matrix.
-
-## Security Best Practices
-
-### Production Deployment
-
-1. **Change SECRET_KEY**: Generate a strong random secret key
-   ```python
-   import secrets
-   secrets.token_urlsafe(32)
-   ```
-
-2. **Use HTTPS**: Always use SSL/TLS in production
-
-3. **Configure CORS**: Restrict CORS origins to your frontend domains
-   ```python
-   CORS_ORIGINS=["https://yourdomain.com"]
-   ```
-
-4. **Database**: Implement proper database with connection pooling
-
-5. **Rate Limiting**: Add rate limiting middleware
-
-6. **Logging**: Implement comprehensive audit logging
-
-7. **MFA**: Consider adding multi-factor authentication
-
-8. **Token Rotation**: Implement token rotation strategy
-
-## Future Enhancements
-
-### Planned Features
-- [ ] PostgreSQL/MongoDB database integration
-- [ ] Redis caching for tokens
-- [ ] Email verification system
-- [ ] SMS OTP for MFA
-- [ ] Sumsub KYC integration
-- [ ] Onfido KYC integration
-- [ ] Transaction monitoring & alerts
-- [ ] Risk scoring engine
-- [ ] Audit logging system
-- [ ] Rate limiting
-- [ ] API key management
-- [ ] Webhook system
-- [ ] Real-time notifications
-- [ ] Advanced analytics
-
-### Database Schema (When Implementing)
-- Users table with multi-tenant support
-- Tenants table (Clients & SubClients)
-- Accounts, Transactions, Cards tables
-- KYC verifications table
-- Audit logs table
-- Refresh tokens table
-
-## Support & Documentation
-
-- **Interactive API Docs**: http://localhost:8000/docs
-- **Email**: support@nfigate.com
-- **Website**: www.nfigate.com
-
-## License
-
-MIT License - See LICENSE file for details
-
-## Contributing
-
-Contributions are welcome! Please follow these guidelines:
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## Important Notes
-
-⚠️ **Current Implementation**:
-- Uses in-memory storage (replace with database for production)
-- No email verification implemented yet
-- KYC providers not integrated yet
-- No rate limiting
-- No audit logging
-- Basic error handling
-
-**For Production**:
-- Implement proper database (PostgreSQL recommended)
-- Add Redis for token storage and caching
-- Implement email verification
-- Add rate limiting middleware
-- Implement comprehensive audit logging
-- Add monitoring and alerting
-- Use environment-based configuration
-- Implement proper error handling and logging
-- Add unit and integration tests
-- Set up CI/CD pipeline
-
-## Acknowledgments
-
-Built with FastAPI, Pydantic, and Python-JOSE for a secure, modern neo banking platform.
