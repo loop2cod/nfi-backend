@@ -1,17 +1,20 @@
-from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.user import User
-from app.models.schemas import UserCreate, LoginRequest, Token, RefreshTokenRequest
+from app.models.schemas import UserCreate, LoginRequest, Token, RefreshTokenRequest, SumsubInitRequest, SumsubInitResponse, SumsubStatusResponse
 from app.auth.auth import authenticate_user, create_access_token, create_refresh_token, verify_token, get_password_hash
 from app.auth.google_auth import get_google_oauth_client, get_google_user_info
-from app.auth.sumsub_service import sumsub_service
+from app.auth.sumsub_service import generate_websdk_config
 from app.core.config import settings
-import uuid
-from datetime import datetime
+import requests
+import hmac
+import hashlib
+import time
+import json
+from urllib.parse import urlparse
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
@@ -155,46 +158,161 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
-@router.post("/sumsub/init")
-def init_sumsub_verification(current_user: User = Depends(get_current_user)):
-    """Initialize Sumsub verification session"""
-    try:
-        # For now, return mock data to test the frontend integration
-        # TODO: Implement real Sumsub API calls
-        verification_token = "mock_token_123"
-        applicant_id = f"applicant_{current_user.id}"
+def create_sumsub_signature(method: str, url: str, body: str = "") -> tuple[str, str]:
+    """Create HMAC signature for Sumsub API requests"""
+    timestamp = str(int(time.time()))
+    
+    # Parse the URL to get the path
+    parsed_url = urlparse(url)
+    path = parsed_url.path
+    
+    # Create the string to sign
+    string_to_sign = f"{timestamp}{method.upper()}{path}{body}"
+    
+    # Create HMAC signature
+    signature = hmac.new(
+        settings.SUMSUB_SECRET_KEY.encode('utf-8'),
+        string_to_sign.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+    
+    return timestamp, signature
 
-        return {
-            "success": True,
-            "verification_token": verification_token,
-            "applicant_id": applicant_id,
-            "sdk_url": "https://api.sumsub.com/idensic/liveness/latest.js",
-            "config": {
-                "token": verification_token,
-                "applicantId": applicant_id,
-                "endpoint": "https://api.sumsub.com",
-                "locale": "en",
-                "theme": "light"
-            }
-        }
+
+@router.post("/sumsub/init", response_model=SumsubInitResponse)
+def initialize_sumsub_verification(
+    request: SumsubInitRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Initialize Sumsub verification session for the current user"""
+    try:
+        external_user_id = f"user_{current_user.id}"
+        config = generate_websdk_config(external_user_id, request.level_name)
+
+        return SumsubInitResponse(**config)
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to initialize verification: {str(e)}")
+        print(f"Failed to initialize Sumsub verification: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to initialize Sumsub verification: {str(e)}"
+        )
+
+
+def verify_sumsub_webhook_signature(payload: str, signature: str) -> bool:
+    """Verify that webhook signature is valid"""
+    try:
+        expected_signature = hmac.new(
+            settings.SUMSUB_SECRET_KEY.encode('utf-8'),
+            payload.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(signature, expected_signature)
+    except Exception:
+        return False
 
 
 @router.post("/sumsub/webhook")
-async def sumsub_webhook(request: Request):
+async def sumsub_webhook(request: Request, db: Session = Depends(get_db)):
     """Handle Sumsub webhooks for verification status updates"""
-    # In production, verify webhook signature
-    data = await request.json()
+    try:
+        # Get raw body for signature verification
+        body = await request.body()
+        payload = body.decode('utf-8')
+        
+        # Verify webhook signature if present
+        signature = request.headers.get('X-Payload-Digest-Alg-SHA256')
+        if signature and not verify_sumsub_webhook_signature(payload, signature):
+            raise HTTPException(status_code=401, detail="Invalid webhook signature")
+        
+        data = await request.json()
+        print(f"Received Sumsub webhook: {data}")
 
-    # Handle different webhook events
-    event_type = data.get("type")
-    applicant_id = data.get("applicantId")
-    review_status = data.get("reviewStatus")
+        # Handle different webhook events
+        event_type = data.get("type")
+        review_status = data.get("reviewStatus")
+        external_user_id = data.get("externalUserId")
 
-    # Update user verification status based on webhook
-    if event_type == "applicantReviewed" and review_status == "completed":
-        # Mark user as verified
-        pass
+        # Update user verification status based on webhook
+        if event_type == "applicantReviewed" and external_user_id:
+            # Extract user ID from external_user_id (format: "user_123")
+            if external_user_id.startswith("user_"):
+                user_id = int(external_user_id.replace("user_", ""))
+                user = db.query(User).filter(User.id == user_id).first()
+                
+                if user:
+                    if review_status in ["completed", "approved"]:
+                        user.is_verified = True
+                        db.commit()
+                        print(f"User {user_id} marked as verified")
+                    elif review_status in ["rejected", "onHold"]:
+                        user.is_verified = False
+                        db.commit()
+                        print(f"User {user_id} verification status: {review_status}")
 
-    return {"status": "ok"}
+        return {"status": "ok"}
+    except Exception as e:
+        print(f"Webhook processing error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@router.get("/sumsub/status", response_model=SumsubStatusResponse)
+def get_verification_status(current_user: User = Depends(get_current_user)):
+    """Get current user's verification status"""
+    try:
+        external_user_id = f"user_{current_user.id}"
+        
+        # Try to get status from Sumsub
+        try:
+            url = f"{settings.SUMSUB_BASE_URL}/resources/applicants/{external_user_id}/status"
+            timestamp, signature = create_sumsub_signature("GET", url)
+            
+            headers = {
+                "X-App-Token": settings.SUMSUB_TOKEN,
+                "X-App-Access-Sig": signature,
+                "X-App-Access-Ts": timestamp
+            }
+            response = requests.get(url, headers=headers)
+            if response.status_code == 200:
+                status_response = response.json()
+                sumsub_status = status_response.get("reviewStatus", "init")
+            else:
+                sumsub_status = "init"
+        except Exception as e:
+            print(f"Error getting Sumsub status: {e}")
+            sumsub_status = "unknown"
+
+        return SumsubStatusResponse(
+            user_id=current_user.id,
+            is_verified=current_user.is_verified,
+            sumsub_status=sumsub_status,
+            email=current_user.email
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get verification status: {str(e)}")
+
+
+@router.get("/sumsub/health")
+def check_sumsub_health():
+    """Check if Sumsub service is properly configured and accessible"""
+    try:
+        # Basic configuration check
+        if not settings.SUMSUB_TOKEN:
+            return {
+                "status": "error",
+                "message": "Sumsub token not configured",
+                "configured": False
+            }
+        
+        return {
+            "status": "ok",
+            "message": "Sumsub service is configured",
+            "configured": True,
+            "base_url": settings.SUMSUB_BASE_URL
+        }
+    except Exception as e:
+        return {
+            "status": "error", 
+            "message": f"Health check failed: {str(e)}",
+            "configured": False
+        }

@@ -36,3 +36,22 @@ class LoginRequest(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
+
+
+class SumsubInitRequest(BaseModel):
+    level_name: Optional[str] = "id-and-liveness"
+
+
+class SumsubInitResponse(BaseModel):
+    success: bool
+    verification_token: str
+    applicant_id: str
+    sdk_url: str
+    config: dict
+
+
+class SumsubStatusResponse(BaseModel):
+    user_id: int
+    is_verified: bool
+    sumsub_status: str
+    email: str

@@ -18,12 +18,13 @@ class Settings(BaseSettings):
     GOOGLE_REDIRECT_URI: str = "http://127.0.0.1:8000/auth/google/callback"
 
     # Sumsub KYC
-    SUMSUB_API_TOKEN: str = "pjRs8KgzcYmnOIr5hHGMKWJa.hHiMgM4qzVsbmJ4odl9Cj8PevEBwaTuP"  # Remove sbx: prefix
-    SUMSUB_API_SECRET: str = "mailMdNZRQT2QFeEkh2jlaDbJAFf9jfy"
-    SUMSUB_BASE_URL: str = "https://api.sandbox.sumsub.com"  # Use sandbox URL
+    SUMSUB_TOKEN: str = "sbx:J1DIyNOVRktHAXfeHhLViRcz.3jB8EVodDzX3NAoZSOT5xOQwqUxrefNq"
+    SUMSUB_SECRET_KEY: str = "DGLlBENfoYrUinWYwxAXuppBkgN3yy6t"
+    SUMSUB_BASE_URL: str = "https://api.sumsub.com"
+    SUMSUB_APP_TOKEN: Optional[str] = None
 
     # CORS
-    ALLOWED_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:3001"]
+    ALLOWED_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003", "http://localhost:3004", "http://localhost:3005"]
 
     class Config:
         env_file = ".env"
