@@ -6,7 +6,7 @@ import requests
 from typing import Dict, Any, Optional
 from app.core.config import settings
 
-SUMSUB_APP_TOKEN = os.getenv('SUMSUB_APP_TOKEN') or settings.SUMSUB_TOKEN
+SUMSUB_APP_TOKEN = os.getenv('SUMSUB_APP_TOKEN') or settings.SUMSUB_APP_TOKEN
 SUMSUB_SECRET_KEY = os.getenv('SUMSUB_SECRET_KEY') or settings.SUMSUB_SECRET_KEY
 SUMSUB_BASE_URL = settings.SUMSUB_BASE_URL
 
