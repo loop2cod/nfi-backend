@@ -55,3 +55,45 @@ class SumsubStatusResponse(BaseModel):
     is_verified: bool
     sumsub_status: str
     email: str
+
+
+class Enable2FARequest(BaseModel):
+    email: EmailStr
+
+
+class Enable2FAResponse(BaseModel):
+    success: bool
+    message: str
+    is_2fa_enabled: bool
+    two_fa_email: str
+
+
+class Send2FAOTPRequest(BaseModel):
+    email: EmailStr
+
+
+class Send2FAOTPResponse(BaseModel):
+    success: bool
+    message: str
+    two_fa_enabled: bool
+
+
+class Verify2FAOTPRequest(BaseModel):
+    email: EmailStr
+    otp: str
+
+
+class Verify2FAOTPResponse(BaseModel):
+    success: bool
+    message: str
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    token_type: Optional[str] = None
+
+
+class LoginWith2FAResponse(BaseModel):
+    two_fa_required: bool
+    two_fa_email: Optional[str] = None
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    token_type: Optional[str] = None

@@ -4,7 +4,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.user import User
-from app.models.schemas import UserCreate, LoginRequest, Token, RefreshTokenRequest, SumsubInitRequest, SumsubInitResponse, SumsubStatusResponse
+from app.models.schemas import UserCreate, LoginRequest, Token, RefreshTokenRequest, SumsubInitRequest, SumsubInitResponse, SumsubStatusResponse, LoginWith2FAResponse, Send2FAOTPRequest, Send2FAOTPResponse, Verify2FAOTPRequest, Verify2FAOTPResponse
 from app.auth.auth import authenticate_user, create_access_token, create_refresh_token, verify_token, get_password_hash
 from app.auth.google_auth import get_google_oauth_client, get_google_user_info
 from app.auth.sumsub_service import generate_websdk_config
@@ -15,9 +15,25 @@ import hashlib
 import time
 import json
 from urllib.parse import urlparse
+import random
+import string
+from datetime import datetime, timedelta
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+
+
+def generate_otp() -> str:
+    """Generate a 6-digit OTP"""
+    return ''.join(random.choices(string.digits, k=6))
+
+
+def send_otp_email(email: str, otp: str):
+    """Send OTP via email - placeholder for actual email service"""
+    # TODO: Implement actual email sending logic
+    print(f"Sending OTP {otp} to {email}")
+    # This would integrate with your email service (SendGrid, SES, etc.)
+    pass
 
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
@@ -59,7 +75,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=LoginWith2FAResponse)
 def login(request: LoginRequest, db: Session = Depends(get_db)):
     user = authenticate_user(db, request.email, request.password)
     if not user:
@@ -68,11 +84,24 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    
+    # Check if 2FA is enabled
+    if user.is_2fa_enabled:
+        return LoginWith2FAResponse(
+            two_fa_required=True,
+            two_fa_email=user.two_fa_email
+        )
 
+    # If 2FA not enabled, return tokens directly
     access_token = create_access_token(data={"sub": user.email})
     refresh_token = create_refresh_token(data={"sub": user.email})
 
-    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+    return LoginWith2FAResponse(
+        two_fa_required=False,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer"
+    )
 
 
 @router.post("/refresh", response_model=Token)
@@ -316,3 +345,100 @@ def check_sumsub_health():
             "message": f"Health check failed: {str(e)}",
             "configured": False
         }
+
+
+# enable 2FA payload email
+
+
+@router.post("/send-2fa-otp", response_model=Send2FAOTPResponse)
+def send_2fa_otp(request: Send2FAOTPRequest, db: Session = Depends(get_db)):
+    """Send 2FA OTP to user's registered email"""
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    if not user.is_2fa_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="2FA is not enabled for this user"
+        )
+    
+    # Generate OTP and set expiry (5 minutes from now)
+    otp = generate_otp()
+    otp_expiry = datetime.utcnow() + timedelta(minutes=5)
+    
+    # Update user with OTP and expiry
+    user.two_fa_otp = otp
+    user.two_fa_otp_expiry = otp_expiry
+    db.commit()
+    
+    # Send OTP via email
+    send_otp_email(user.two_fa_email or user.email, otp)
+    
+    return Send2FAOTPResponse(
+        success=True,
+        message="OTP sent successfully",
+        two_fa_enabled=True
+    )
+
+
+@router.post("/verify-2fa-otp", response_model=Verify2FAOTPResponse)
+def verify_2fa_otp(request: Verify2FAOTPRequest, db: Session = Depends(get_db)):
+    """Verify 2FA OTP and complete login"""
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    if not user.is_2fa_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="2FA is not enabled for this user"
+        )
+    
+    # Check if OTP exists
+    if not user.two_fa_otp:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No OTP found. Please request a new OTP."
+        )
+    
+    # Check if OTP has expired
+    if user.two_fa_otp_expiry and datetime.utcnow() > user.two_fa_otp_expiry:
+        # Clear expired OTP
+        user.two_fa_otp = None
+        user.two_fa_otp_expiry = None
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OTP has expired. Please request a new OTP."
+        )
+    
+    # Verify OTP
+    if user.two_fa_otp != request.otp:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OTP"
+        )
+    
+    # OTP is correct, clear it and generate tokens
+    user.two_fa_otp = None
+    user.two_fa_otp_expiry = None
+    db.commit()
+    
+    # Generate tokens
+    access_token = create_access_token(data={"sub": user.email})
+    refresh_token = create_refresh_token(data={"sub": user.email})
+    
+    return Verify2FAOTPResponse(
+        success=True,
+        message="2FA verification successful",
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer"
+    )
