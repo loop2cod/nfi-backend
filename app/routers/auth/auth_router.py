@@ -9,6 +9,8 @@ from app.auth.auth import authenticate_user, create_access_token, create_refresh
 from app.auth.google_auth import get_google_oauth_client, get_google_user_info
 from app.auth.sumsub_service import generate_websdk_config
 from app.core.config import settings
+from app.core.dfns_client import init_dfns_client, create_user_wallet
+from app.models.wallet import Wallet
 import requests
 import hmac
 import hashlib
@@ -78,10 +80,15 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 @router.post("/login", response_model=LoginWith2FAResponse)
 def login(request: LoginRequest, db: Session = Depends(get_db)):
     user = authenticate_user(db, request.email, request.password)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User not found",
+        )
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Incorrect password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -95,6 +102,22 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     # If 2FA not enabled, return tokens directly
     access_token = create_access_token(data={"sub": user.email})
     refresh_token = create_refresh_token(data={"sub": user.email})
+
+    # Check if user has wallets, if not create them on first login
+    if not user.wallets:
+        init_dfns_client()
+        currencies_networks = [
+            ("USDT", "EthereumSepolia"),
+            ("USDC", "EthereumSepolia"),
+            ("ETH", "EthereumSepolia"),
+            ("BTC", "BitcoinTestnet")
+        ]
+        for currency, network in currencies_networks:
+            wallet_data = create_user_wallet(user.id, currency, network)
+            if wallet_data:
+                db_wallet = Wallet(**wallet_data)
+                db.add(db_wallet)
+        db.commit()
 
     return LoginWith2FAResponse(
         two_fa_required=False,

@@ -1,5 +1,6 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, Dict, Any, List
+from datetime import datetime
 
 
 class UserBase(BaseModel):
@@ -14,6 +15,10 @@ class User(UserBase):
     id: int
     is_active: bool
     is_verified: bool
+    verification_status: str
+    verification_result: Optional[str] = None
+    sumsub_applicant_id: Optional[str] = None
+    verification_completed_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -97,3 +102,41 @@ class LoginWith2FAResponse(BaseModel):
     access_token: Optional[str] = None
     refresh_token: Optional[str] = None
     token_type: Optional[str] = None
+
+
+# Verification Schemas
+class VerificationStatusResponse(BaseModel):
+    verification_status: str
+    verification_result: Optional[str] = None
+    sumsub_applicant_id: Optional[str] = None
+    verification_completed_at: Optional[datetime] = None
+    verification_steps: Optional[Dict[str, Any]] = None
+    verification_error_message: Optional[str] = None
+
+
+class VerificationStepResponse(BaseModel):
+    step_name: str
+    status: str
+    completed_at: Optional[datetime] = None
+    error_message: Optional[str] = None
+
+
+class SumsubWebhookEvent(BaseModel):
+    applicantId: str
+    inspectionId: Optional[str] = None
+    correlationId: Optional[str] = None
+    externalUserId: Optional[str] = None
+    levelName: Optional[str] = None
+    type: str
+    reviewStatus: Optional[str] = None
+    reviewResult: Optional[Dict[str, Any]] = None
+    sandboxMode: Optional[bool] = None
+    createdAtMs: Optional[str] = None
+    clientId: Optional[str] = None
+
+
+class WebhookProcessingResponse(BaseModel):
+    success: bool
+    message: str
+    user_id: Optional[int] = None
+    event_processed: bool = False

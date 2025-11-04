@@ -131,7 +131,7 @@ This will create a super admin user with the credentials specified in your `.env
 Start the development server:
 
 ```bash
-uvicorn main:app --reload
+uvicorn app.main:app --reload
 ```
 
 The API will be available at:

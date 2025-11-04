@@ -5,7 +5,7 @@ from app.models.user import User
 router = APIRouter()
 
 
-@router.get("/")
+@router.get("/stat", response_model=dict)
 def get_dashboard(current_user: User = Depends(get_current_user)):
     return {
         "message": f"Welcome to your dashboard, {current_user.email}!",
