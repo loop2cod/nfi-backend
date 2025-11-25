@@ -10,6 +10,7 @@ from datetime import datetime
 
 from app.core.database import get_db
 from app.core.config import settings
+from app.core.bvnk_client import get_bvnk_client
 from app.models.user import User
 from app.models.verification_event import VerificationEvent
 from app.models.schemas import SumsubWebhookEvent, WebhookProcessingResponse
@@ -197,6 +198,27 @@ async def process_verification_event(db: Session, user: User, payload: Dict[str,
                 user.is_verified = True
                 user.verification_error_message = None
                 logger.info(f"User {user.id} verification completed successfully")
+
+                # Create BVNK customer after successful KYC
+                if not user.bvnk_customer_id:
+                    try:
+                        bvnk_client = get_bvnk_client()
+                        customer_data = bvnk_client.create_customer(
+                            external_reference=user.user_id,
+                            email=user.email,
+                            metadata={
+                                "user_id": user.user_id,
+                                "verified_at": datetime.utcnow().isoformat(),
+                                "verification_level": user.verification_level_name or "basic"
+                            }
+                        )
+                        user.bvnk_customer_id = customer_data.get('id')
+                        user.bvnk_customer_created_at = datetime.utcnow()
+                        logger.info(f"BVNK customer created for user {user.id}: {user.bvnk_customer_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to create BVNK customer for user {user.id}: {str(e)}")
+                        # Don't fail the entire process if BVNK creation fails
+                        user.verification_error_message = f"KYC approved but BVNK customer creation pending: {str(e)}"
             elif review_result == "RED":
                 user.is_verified = False
                 reject_labels = payload.get('reviewResult', {}).get('rejectLabels', [])
@@ -223,6 +245,26 @@ async def process_verification_event(db: Session, user: User, payload: Dict[str,
             if review_result == "GREEN":
                 user.is_verified = True
                 user.verification_error_message = None
+
+                # Create BVNK customer after successful KYC workflow
+                if not user.bvnk_customer_id:
+                    try:
+                        bvnk_client = get_bvnk_client()
+                        customer_data = bvnk_client.create_customer(
+                            external_reference=user.user_id,
+                            email=user.email,
+                            metadata={
+                                "user_id": user.user_id,
+                                "verified_at": datetime.utcnow().isoformat(),
+                                "verification_level": user.verification_level_name or "basic"
+                            }
+                        )
+                        user.bvnk_customer_id = customer_data.get('id')
+                        user.bvnk_customer_created_at = datetime.utcnow()
+                        logger.info(f"BVNK customer created for user {user.id}: {user.bvnk_customer_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to create BVNK customer for user {user.id}: {str(e)}")
+                        user.verification_error_message = f"KYC approved but BVNK customer creation pending: {str(e)}"
             else:
                 user.is_verified = False
                 reject_labels = payload.get('reviewResult', {}).get('rejectLabels', [])

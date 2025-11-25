@@ -10,6 +10,7 @@ from app.auth.google_auth import get_google_oauth_client, get_google_user_info
 from app.auth.sumsub_service import generate_websdk_config
 from app.core.config import settings
 from app.core.dfns_client import init_dfns_client, create_user_wallet
+from app.core.user_id_generator import generate_user_id
 from app.models.wallet import Wallet
 import requests
 import hmac
@@ -63,18 +64,33 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    # Create new user
-    hashed_password = get_password_hash(user.password)
-    db_user = User(email=user.email, hashed_password=hashed_password)
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
+    try:
+        # Generate unique user ID
+        user_id = generate_user_id(db)
 
-    # Create tokens
-    access_token = create_access_token(data={"sub": user.email})
-    refresh_token = create_refresh_token(data={"sub": user.email})
+        # Create new user
+        hashed_password = get_password_hash(user.password)
+        db_user = User(
+            user_id=user_id,
+            email=user.email,
+            hashed_password=hashed_password
+        )
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
 
-    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+        # Create tokens
+        access_token = create_access_token(data={"sub": user.email})
+        refresh_token = create_refresh_token(data={"sub": user.email})
+
+        return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
 
 @router.post("/login", response_model=LoginWith2FAResponse)
@@ -143,6 +159,24 @@ def refresh_token(request: RefreshTokenRequest):
     return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
 
+@router.get("/me")
+def get_me(current_user: User = Depends(get_current_user)):
+    """Get current authenticated user information"""
+    return {
+        "id": current_user.id,
+        "user_id": current_user.user_id,
+        "email": current_user.email,
+        "is_active": current_user.is_active,
+        "is_verified": current_user.is_verified,
+        "verification_status": current_user.verification_status,
+        "verification_result": current_user.verification_result,
+        "sumsub_applicant_id": current_user.sumsub_applicant_id,
+        "bvnk_customer_id": current_user.bvnk_customer_id,
+        "verification_completed_at": current_user.verification_completed_at,
+        "created_at": current_user.created_at,
+    }
+
+
 @router.get("/google/login")
 async def google_login():
     client = get_google_oauth_client()
@@ -176,12 +210,18 @@ async def google_callback(request: Request, response: Response, db: Session = De
     # Check if user exists, if not create
     user = db.query(User).filter(User.email == email).first()
     if not user:
-        # For Google auth, we don't need password, but set a dummy one
-        hashed_password = get_password_hash("google_oauth")
-        user = User(email=email, hashed_password=hashed_password)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+        try:
+            # Generate unique user ID
+            user_id = generate_user_id(db)
+            # For Google auth, we don't need password, but set a dummy one
+            hashed_password = get_password_hash("google_oauth")
+            user = User(user_id=user_id, email=email, hashed_password=hashed_password)
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
 
     # Create tokens
     access_token = create_access_token(data={"sub": email})

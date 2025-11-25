@@ -8,6 +8,7 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, unique=True, index=True, nullable=False)  # Format: NF-MMYYYY### (e.g., NF-012025001)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     is_2fa_enabled = Column(Boolean, default=False)
@@ -26,10 +27,14 @@ class User(Base):
     verification_completed_at = Column(DateTime(timezone=True), nullable=True)
     verification_steps = Column(JSON, nullable=True)             # Track individual verification steps
     verification_error_message = Column(Text, nullable=True)
+
+    # BVNK integration fields
+    bvnk_customer_id = Column(String, nullable=True, unique=True, index=True)  # BVNK customer UUID
+    bvnk_customer_created_at = Column(DateTime(timezone=True), nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
-    # Relationships
-    verification_events = relationship("VerificationEvent", back_populates="user")
-    wallets = relationship("Wallet", back_populates="user")
+    # Relationships (lazy loading to avoid circular imports)
+    verification_events = relationship("VerificationEvent", back_populates="user", lazy="dynamic")
+    wallets = relationship("Wallet", back_populates="user", lazy="dynamic")

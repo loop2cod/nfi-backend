@@ -116,15 +116,47 @@ cp .env.example .env
 
 Edit the `.env` file with your Firebase credentials and other settings.
 
-### 5. Create Super Admin User
+### 5. Create Admin User
 
-After configuring Firebase credentials, run the script to create the initial super admin:
+Create an admin user to access the NFI Client Dashboard:
 
+#### Option 1: Interactive Mode
 ```bash
-python create_super_admin.py
+./create-admin.sh
 ```
 
-This will create a super admin user with the credentials specified in your `.env` file.
+This will prompt you for email and password.
+
+#### Option 2: Direct Command
+```bash
+./create-admin.sh admin@nfi.com SecurePassword123
+```
+
+#### Option 3: Using Python Script Directly
+```bash
+python create_admin.py admin@nfi.com SecurePassword123
+```
+
+**Example Output:**
+```
+============================================================
+✅ Admin User Created Successfully!
+============================================================
+User ID:       NF-012025001
+Email:         admin@nfi.com
+Password:      SecurePassword123
+Status:        Active & Verified
+Created At:    2025-01-24 10:30:00
+
+📝 Login Credentials for NFI Client Dashboard:
+   Email:    admin@nfi.com
+   Password: SecurePassword123
+
+🌐 Dashboard URL: http://localhost:3000
+============================================================
+```
+
+This admin user can now log in to the NFI Client Dashboard at http://localhost:3000
 
 ## Running the Application
 

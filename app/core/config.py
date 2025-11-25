@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     DFNS_CRED_ID: Optional[str] = None
 
     # -------------------------
+    # BVNK Payment Service
+    # -------------------------
+    BVNK_BASE_URL: str = "https://api.sandbox.bvnk.com"  # Use https://api.bvnk.com for production
+    BVNK_HAWK_AUTH_ID: Optional[str] = None
+    BVNK_SECRET_KEY: Optional[str] = None
+
+    # -------------------------
     # CORS
     # -------------------------
     ALLOWED_ORIGINS: List[str] = [

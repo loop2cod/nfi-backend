@@ -13,11 +13,13 @@ class UserCreate(UserBase):
 
 class User(UserBase):
     id: int
+    user_id: str
     is_active: bool
     is_verified: bool
     verification_status: str
     verification_result: Optional[str] = None
     sumsub_applicant_id: Optional[str] = None
+    bvnk_customer_id: Optional[str] = None
     verification_completed_at: Optional[datetime] = None
 
     class Config:

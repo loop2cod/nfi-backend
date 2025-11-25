@@ -11,12 +11,18 @@ from app.routers.settings.settings_router import router as settings_router
 from app.routers.webhook.sumsub_webhook import router as webhook_router
 from app.routers.verification.verification_router import router as verification_router
 from app.routers.wallets.wallets_router import router as wallets_router
+from app.routers.admin.admin_router import router as admin_router
+from app.routers.admin.admin_auth_router import router as admin_auth_router
+from app.routers.admin.admin_management_router import router as admin_management_router
 from app.core.dfns_client import init_dfns_client
 
 # Import models to ensure they are registered with SQLAlchemy
 import app.models.user
 import app.models.verification_event
 import app.models.wallet
+import app.models.user_counter
+import app.models.admin_user
+import app.models.admin_login_history
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -53,6 +59,9 @@ app.include_router(settings_router, prefix="/settings", tags=["settings"])
 app.include_router(webhook_router, prefix="/webhook", tags=["webhook"])
 app.include_router(verification_router, prefix="/verification", tags=["verification"])
 app.include_router(wallets_router, prefix="/wallets", tags=["wallets"])
+app.include_router(admin_auth_router, prefix="/admin/auth", tags=["admin-auth"])
+app.include_router(admin_management_router, prefix="/admin", tags=["admin-management"])
+app.include_router(admin_router, prefix="/admin", tags=["admin"])
 
 @app.get("/")
 def read_root():
