@@ -6,8 +6,12 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.user import User
 
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Configure bcrypt context with explicit settings to avoid version detection issues
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto",
+    bcrypt__ident="2b"  # Use bcrypt 2b variant
+)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
