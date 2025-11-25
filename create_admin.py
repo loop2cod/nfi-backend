@@ -14,16 +14,16 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.core.database import SessionLocal, engine, Base
 from app.auth.auth import get_password_hash
-
-# Import all models to ensure relationships are properly registered
-from app.models.user import User
-from app.models.user_counter import UserCounter
-from app.models.verification_event import VerificationEvent
-from app.models.wallet import Wallet
-from app.models.login_activity import LoginActivity
 from app.models.admin_user import AdminUser, AdminRole
-from app.models.admin_login_history import AdminLoginHistory
 
+# Import all models to ensure they are registered with SQLAlchemy
+import app.models.admin_login_history
+import app.models.admin_user
+import app.models.login_activity
+import app.models.user
+import app.models.user_counter
+import app.models.verification_event
+import app.models.wallet
 
 def create_admin_user(email: str, password: str, username: str = None, full_name: str = None, is_super_admin: bool = False):
     """Create an admin user for the nfi-client-dashboard"""

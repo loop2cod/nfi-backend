@@ -40,10 +40,10 @@ if [ $# -eq 0 ]; then
     echo ""
 
     # Run the Python script
-    python create_admin.py "$email" "$password"
+    python3 create_admin.py "$email" "$password"
 elif [ $# -eq 2 ]; then
     # Non-interactive mode
-    python create_admin.py "$1" "$2"
+    python3 create_admin.py "$1" "$2"
 else
     echo -e "${RED}Usage:${NC}"
     echo "  ./create-admin.sh                    # Interactive mode"

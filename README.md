@@ -129,7 +129,7 @@ This will prompt you for email and password.
 
 #### Option 2: Direct Command
 ```bash
-./create-admin.sh admin@nfi.com SecurePassword123
+./create-admin.sh admin@nfi.com Admin@123
 ```
 
 #### Option 3: Using Python Script Directly
