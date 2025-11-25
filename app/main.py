@@ -23,6 +23,7 @@ import app.models.wallet
 import app.models.user_counter
 import app.models.admin_user
 import app.models.admin_login_history
+import app.models.login_activity
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
