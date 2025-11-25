@@ -20,7 +20,9 @@ from app.models.user import User
 from app.models.user_counter import UserCounter
 from app.models.verification_event import VerificationEvent
 from app.models.wallet import Wallet
+from app.models.login_activity import LoginActivity
 from app.models.admin_user import AdminUser, AdminRole
+from app.models.admin_login_history import AdminLoginHistory
 
 
 def create_admin_user(email: str, password: str, username: str = None, full_name: str = None, is_super_admin: bool = False):

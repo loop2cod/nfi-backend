@@ -17,13 +17,14 @@ from app.routers.admin.admin_management_router import router as admin_management
 from app.core.dfns_client import init_dfns_client
 
 # Import models to ensure they are registered with SQLAlchemy
+# Import all models - SQLAlchemy will handle dependencies
+import app.models.admin_login_history
+import app.models.admin_user
+import app.models.login_activity
 import app.models.user
+import app.models.user_counter
 import app.models.verification_event
 import app.models.wallet
-import app.models.user_counter
-import app.models.admin_user
-import app.models.admin_login_history
-import app.models.login_activity
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
