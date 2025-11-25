@@ -21,7 +21,7 @@ from app.auth.auth import (
     get_password_hash,
     verify_password
 )
-from app.utils.geolocation import get_real_ip_address, get_location_from_ip, get_device_type_from_user_agent
+from app.utils.login_tracker import extract_login_info
 from fastapi.security import OAuth2PasswordBearer
 
 router = APIRouter()
@@ -83,7 +83,7 @@ def get_current_admin(token: str = Depends(oauth2_scheme), db: Session = Depends
 
 
 @router.post("/login", response_model=AdminLoginResponse)
-def admin_login(
+async def admin_login(
     request: AdminLoginRequest,
     http_request: Request,
     db: Session = Depends(get_db)
@@ -92,11 +92,8 @@ def admin_login(
     Admin login endpoint
     Returns JWT tokens for admin dashboard access
     """
-    # Get request details - extract real IP from forwarded headers
-    ip_address = get_real_ip_address(http_request)
-    user_agent = http_request.headers.get("user-agent")
-    device_type = get_device_type_from_user_agent(user_agent)
-    location = get_location_from_ip(ip_address) if ip_address else "Unknown"
+    # Extract login information from request
+    login_info = await extract_login_info(http_request)
 
     # Find admin by email
     admin = db.query(AdminUser).filter(AdminUser.email == request.email).first()
@@ -115,12 +112,10 @@ def admin_login(
         failed_login = AdminLoginHistory(
             admin_id=admin.id,
             login_at=datetime.now(timezone.utc),
-            ip_address=ip_address,
-            user_agent=user_agent,
-            login_method="email",
             login_status="failed",
-            location=location,
-            device_type=device_type
+            login_method="email_password",
+            failure_reason="Incorrect password",
+            **login_info
         )
         db.add(failed_login)
         db.commit()
@@ -136,12 +131,10 @@ def admin_login(
         failed_login = AdminLoginHistory(
             admin_id=admin.id,
             login_at=datetime.now(timezone.utc),
-            ip_address=ip_address,
-            user_agent=user_agent,
-            login_method="email",
             login_status="failed",
-            location=location,
-            device_type=device_type
+            login_method="email_password",
+            failure_reason="Account inactive",
+            **login_info
         )
         db.add(failed_login)
         db.commit()
@@ -159,12 +152,9 @@ def admin_login(
     login_history = AdminLoginHistory(
         admin_id=admin.id,
         login_at=datetime.now(timezone.utc),
-        ip_address=ip_address,
-        user_agent=user_agent,
-        login_method="email",
         login_status="success",
-        location=location,
-        device_type=device_type
+        login_method="email_password",
+        **login_info
     )
     db.add(login_history)
     db.commit()
@@ -241,3 +231,32 @@ def admin_logout(current_admin: AdminUser = Depends(get_current_admin)):
     Client should remove tokens from localStorage
     """
     return {"message": "Logged out successfully"}
+
+
+@router.get("/login-history")
+def get_admin_login_history(
+    current_admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+    limit: int = 10
+):
+    """Get login history for the current admin"""
+    history = db.query(AdminLoginHistory)\
+        .filter(AdminLoginHistory.admin_id == current_admin.id)\
+        .order_by(AdminLoginHistory.login_at.desc())\
+        .limit(limit)\
+        .all()
+
+    return [{
+        "id": record.id,
+        "login_time": record.login_at,
+        "status": record.login_status,
+        "method": record.login_method,
+        "ip_address": record.ip_address,
+        "location": record.location or f"{record.city}, {record.country}" if record.city and record.country else "Unknown",
+        "device_type": record.device_type,
+        "browser": record.browser,
+        "os": record.os,
+        "is_new_device": record.is_new_device,
+        "is_suspicious": record.is_suspicious,
+        "failure_reason": record.failure_reason
+    } for record in history]

@@ -1,28 +1,20 @@
-"""
-Admin Login History Model
-Tracks each login event for admin users
-"""
-
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
 
-class AdminLoginHistory(Base):
-    """
-    Admin Login History Model
-    Records each login event for audit and security purposes
-    """
-    __tablename__ = "admin_login_history"
+class LoginActivity(Base):
+    """Login activity tracking for End User Customers (nfi-end_user)"""
+    __tablename__ = "login_activities"
 
     id = Column(Integer, primary_key=True, index=True)
-    admin_id = Column(Integer, ForeignKey("admin_users.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     # Login details
-    login_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    login_status = Column(String, default="success", nullable=False)  # success, failed, 2fa_pending
-    login_method = Column(String, nullable=True)  # email, sso, etc.
+    login_time = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    status = Column(String, nullable=False)  # success, failed, 2fa_pending, 2fa_success
+    method = Column(String, nullable=False)  # email_password, google_oauth, etc.
 
     # Location and device info
     ip_address = Column(String, nullable=True)
@@ -43,8 +35,5 @@ class AdminLoginHistory(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # Relationship
-    admin_user = relationship("AdminUser", back_populates="login_activities")
-
-    def __repr__(self):
-        return f"<AdminLoginHistory(admin_id={self.admin_id}, login_at='{self.login_at}', status='{self.login_status}')>"
+    # Relationships
+    user = relationship("User", back_populates="login_activities")

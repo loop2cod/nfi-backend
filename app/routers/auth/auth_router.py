@@ -4,6 +4,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.user import User
+from app.models.login_activity import LoginActivity
 from app.models.schemas import UserCreate, LoginRequest, Token, RefreshTokenRequest, SumsubInitRequest, SumsubInitResponse, SumsubStatusResponse, LoginWith2FAResponse, Send2FAOTPRequest, Send2FAOTPResponse, Verify2FAOTPRequest, Verify2FAOTPResponse
 from app.auth.auth import authenticate_user, create_access_token, create_refresh_token, verify_token, get_password_hash
 from app.auth.google_auth import get_google_oauth_client, get_google_user_info
@@ -12,6 +13,7 @@ from app.core.config import settings
 from app.core.dfns_client import init_dfns_client, create_user_wallet
 from app.core.user_id_generator import generate_user_id
 from app.models.wallet import Wallet
+from app.utils.login_tracker import extract_login_info
 import requests
 import hmac
 import hashlib
@@ -58,7 +60,10 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 
 @router.post("/register", response_model=Token)
-def register(user: UserCreate, db: Session = Depends(get_db)):
+async def register(user: UserCreate, http_request: Request, db: Session = Depends(get_db)):
+    # Extract login information from request
+    login_info = await extract_login_info(http_request)
+
     # Check if user exists
     db_user = db.query(User).filter(User.email == user.email).first()
     if db_user:
@@ -79,6 +84,16 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(db_user)
 
+        # Track successful registration as login activity
+        login_activity = LoginActivity(
+            user_id=db_user.id,
+            status="success",
+            method="registration",
+            **login_info
+        )
+        db.add(login_activity)
+        db.commit()
+
         # Create tokens
         access_token = create_access_token(data={"sub": user.email})
         refresh_token = create_refresh_token(data={"sub": user.email})
@@ -94,22 +109,57 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=LoginWith2FAResponse)
-def login(request: LoginRequest, db: Session = Depends(get_db)):
+async def login(request: LoginRequest, http_request: Request, db: Session = Depends(get_db)):
+    # Extract login information from request
+    login_info = await extract_login_info(http_request)
+
     user = authenticate_user(db, request.email, request.password)
     if user is None:
+        # Track failed login attempt - user not found
+        login_activity = LoginActivity(
+            user_id=0,  # Unknown user
+            status="failed",
+            method="email_password",
+            failure_reason="User not found",
+            **login_info
+        )
+        db.add(login_activity)
+        db.commit()
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User not found",
         )
     if not user:
+        # Track failed login attempt - incorrect password
+        login_activity = LoginActivity(
+            user_id=user.id if user else 0,
+            status="failed",
+            method="email_password",
+            failure_reason="Incorrect password",
+            **login_info
+        )
+        db.add(login_activity)
+        db.commit()
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     # Check if 2FA is enabled
     if user.is_2fa_enabled:
+        # Track 2FA pending
+        login_activity = LoginActivity(
+            user_id=user.id,
+            status="2fa_pending",
+            method="email_password",
+            **login_info
+        )
+        db.add(login_activity)
+        db.commit()
+
         return LoginWith2FAResponse(
             two_fa_required=True,
             two_fa_email=user.two_fa_email
@@ -134,6 +184,16 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
                 db_wallet = Wallet(**wallet_data)
                 db.add(db_wallet)
         db.commit()
+
+    # Track successful login
+    login_activity = LoginActivity(
+        user_id=user.id,
+        status="success",
+        method="email_password",
+        **login_info
+    )
+    db.add(login_activity)
+    db.commit()
 
     return LoginWith2FAResponse(
         two_fa_required=False,
@@ -177,6 +237,35 @@ def get_me(current_user: User = Depends(get_current_user)):
     }
 
 
+@router.get("/login-activity")
+def get_login_activity(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    limit: int = 10
+):
+    """Get login activity history for the current user"""
+    activities = db.query(LoginActivity)\
+        .filter(LoginActivity.user_id == current_user.id)\
+        .order_by(LoginActivity.login_time.desc())\
+        .limit(limit)\
+        .all()
+
+    return [{
+        "id": activity.id,
+        "login_time": activity.login_time,
+        "status": activity.status,
+        "method": activity.method,
+        "ip_address": activity.ip_address,
+        "location": activity.location or f"{activity.city}, {activity.country}" if activity.city and activity.country else "Unknown",
+        "device_type": activity.device_type,
+        "browser": activity.browser,
+        "os": activity.os,
+        "is_new_device": activity.is_new_device,
+        "is_suspicious": activity.is_suspicious,
+        "failure_reason": activity.failure_reason
+    } for activity in activities]
+
+
 @router.get("/google/login")
 async def google_login():
     client = get_google_oauth_client()
@@ -189,6 +278,9 @@ async def google_login():
 
 @router.get("/google/callback")
 async def google_callback(request: Request, response: Response, db: Session = Depends(get_db)):
+    # Extract login information
+    login_info = await extract_login_info(request)
+
     code = request.query_params.get("code")
     if not code:
         raise HTTPException(status_code=400, detail="Authorization code not provided")
@@ -222,6 +314,16 @@ async def google_callback(request: Request, response: Response, db: Session = De
         except Exception as e:
             db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
+
+    # Track successful Google OAuth login
+    login_activity = LoginActivity(
+        user_id=user.id,
+        status="success",
+        method="google_oauth",
+        **login_info
+    )
+    db.add(login_activity)
+    db.commit()
 
     # Create tokens
     access_token = create_access_token(data={"sub": email})
@@ -278,7 +380,7 @@ def initialize_sumsub_verification(
 ):
     """Initialize Sumsub verification session for the current user"""
     try:
-        external_user_id = f"user_{current_user.id}"
+        external_user_id = f"user_{current_user.user_id}"
         config = generate_websdk_config(external_user_id, request.level_name)
 
         return SumsubInitResponse(**config)
@@ -449,28 +551,31 @@ def send_2fa_otp(request: Send2FAOTPRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/verify-2fa-otp", response_model=Verify2FAOTPResponse)
-def verify_2fa_otp(request: Verify2FAOTPRequest, db: Session = Depends(get_db)):
+async def verify_2fa_otp(request: Verify2FAOTPRequest, http_request: Request, db: Session = Depends(get_db)):
     """Verify 2FA OTP and complete login"""
+    # Extract login information
+    login_info = await extract_login_info(http_request)
+
     user = db.query(User).filter(User.email == request.email).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    
+
     if not user.is_2fa_enabled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="2FA is not enabled for this user"
         )
-    
+
     # Check if OTP exists
     if not user.two_fa_otp:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No OTP found. Please request a new OTP."
         )
-    
+
     # Check if OTP has expired
     if user.two_fa_otp_expiry and datetime.utcnow() > user.two_fa_otp_expiry:
         # Clear expired OTP
@@ -481,23 +586,44 @@ def verify_2fa_otp(request: Verify2FAOTPRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="OTP has expired. Please request a new OTP."
         )
-    
+
     # Verify OTP
     if user.two_fa_otp != request.otp:
+        # Track failed 2FA attempt
+        login_activity = LoginActivity(
+            user_id=user.id,
+            status="failed",
+            method="2fa_verification",
+            failure_reason="Invalid OTP",
+            **login_info
+        )
+        db.add(login_activity)
+        db.commit()
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid OTP"
         )
-    
+
     # OTP is correct, clear it and generate tokens
     user.two_fa_otp = None
     user.two_fa_otp_expiry = None
     db.commit()
-    
+
+    # Track successful 2FA login
+    login_activity = LoginActivity(
+        user_id=user.id,
+        status="2fa_success",
+        method="2fa_verification",
+        **login_info
+    )
+    db.add(login_activity)
+    db.commit()
+
     # Generate tokens
     access_token = create_access_token(data={"sub": user.email})
     refresh_token = create_refresh_token(data={"sub": user.email})
-    
+
     return Verify2FAOTPResponse(
         success=True,
         message="2FA verification successful",

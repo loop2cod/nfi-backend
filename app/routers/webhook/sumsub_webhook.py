@@ -277,7 +277,61 @@ async def process_verification_event(db: Session, user: User, payload: Dict[str,
             user.verification_completed_at = None
             user.verification_error_message = None
             logger.info(f"User {user.id} verification reset")
-            
+
+        elif event_type == "applicantActionPending":
+            # Action-based verification pending
+            logger.info(f"User {user.id} action verification pending")
+
+        elif event_type == "applicantActionReviewed":
+            # Action-based verification reviewed
+            action_result = payload.get('reviewResult', {}).get('reviewAnswer') if payload.get('reviewResult') else None
+            if action_result == "GREEN":
+                logger.info(f"User {user.id} action verification approved")
+            elif action_result == "RED":
+                logger.info(f"User {user.id} action verification rejected")
+            else:
+                logger.info(f"User {user.id} action verification reviewed with result: {action_result}")
+
+        elif event_type == "applicantActionOnHold":
+            # Action-based verification on hold
+            logger.info(f"User {user.id} action verification on hold")
+
+        elif event_type == "applicantPersonalInfoChanged":
+            # Personal information changed
+            logger.info(f"User {user.id} personal information changed")
+
+        elif event_type == "applicantPersonalDataDeleted":
+            # Personal data deleted
+            logger.info(f"User {user.id} personal data deleted")
+
+        elif event_type == "applicantTagsChanged":
+            # Tags changed
+            logger.info(f"User {user.id} tags changed")
+
+        elif event_type == "applicantActivated":
+            # Applicant activated
+            logger.info(f"User {user.id} applicant activated")
+
+        elif event_type == "applicantDeactivated":
+            # Applicant deactivated
+            logger.info(f"User {user.id} applicant deactivated")
+
+        elif event_type == "applicantDeleted":
+            # Applicant deleted - mark as not verified
+            user.verification_status = "not_started"
+            user.verification_result = None
+            user.is_verified = False
+            user.verification_completed_at = None
+            user.verification_error_message = "Applicant deleted"
+            logger.info(f"User {user.id} applicant deleted")
+
+        elif event_type == "applicantLevelChanged":
+            # Verification level changed
+            new_level = payload.get('levelName')
+            if new_level:
+                user.verification_level_name = new_level
+                logger.info(f"User {user.id} verification level changed to: {new_level}")
+
         # Update verification steps tracking
         if not user.verification_steps:
             user.verification_steps = {}

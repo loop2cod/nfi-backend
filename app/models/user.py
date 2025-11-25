@@ -38,3 +38,4 @@ class User(Base):
     # Relationships (lazy loading to avoid circular imports)
     verification_events = relationship("VerificationEvent", back_populates="user", lazy="dynamic")
     wallets = relationship("Wallet", back_populates="user", lazy="dynamic")
+    login_activities = relationship("LoginActivity", back_populates="user", lazy="dynamic")

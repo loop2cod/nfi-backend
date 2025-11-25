@@ -6,6 +6,7 @@ This is completely separate from the User model (end users/customers)
 
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SQLEnum
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 from app.core.database import Base
 import enum
 
@@ -43,6 +44,9 @@ class AdminUser(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     created_by = Column(Integer, nullable=True)  # Admin ID who created this admin
+
+    # Relationships
+    login_activities = relationship("AdminLoginHistory", back_populates="admin_user", lazy="dynamic")
 
     def __repr__(self):
         return f"<AdminUser(username='{self.username}', email='{self.email}', role='{self.role}')>"
