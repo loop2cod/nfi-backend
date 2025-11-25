@@ -1,1 +1,4 @@
-# Webhook routers module
+"""
+Webhooks Package
+Handles external webhook integrations
+"""

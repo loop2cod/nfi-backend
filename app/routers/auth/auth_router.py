@@ -393,69 +393,16 @@ def initialize_sumsub_verification(
         )
 
 
-def verify_sumsub_webhook_signature(payload: str, signature: str) -> bool:
-    """Verify that webhook signature is valid"""
-    try:
-        expected_signature = hmac.new(
-            settings.SUMSUB_SECRET_KEY.encode('utf-8'),
-            payload.encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
-        return hmac.compare_digest(signature, expected_signature)
-    except Exception:
-        return False
-
-
-@router.post("/sumsub/webhook")
-async def sumsub_webhook(request: Request, db: Session = Depends(get_db)):
-    """Handle Sumsub webhooks for verification status updates"""
-    try:
-        # Get raw body for signature verification
-        body = await request.body()
-        payload = body.decode('utf-8')
-        
-        # Verify webhook signature if present
-        signature = request.headers.get('X-Payload-Digest-Alg-SHA256')
-        if signature and not verify_sumsub_webhook_signature(payload, signature):
-            raise HTTPException(status_code=401, detail="Invalid webhook signature")
-        
-        data = await request.json()
-        print(f"Received Sumsub webhook: {data}")
-
-        # Handle different webhook events
-        event_type = data.get("type")
-        review_status = data.get("reviewStatus")
-        external_user_id = data.get("externalUserId")
-
-        # Update user verification status based on webhook
-        if event_type == "applicantReviewed" and external_user_id:
-            # Extract user ID from external_user_id (format: "user_123")
-            if external_user_id.startswith("user_"):
-                user_id = int(external_user_id.replace("user_", ""))
-                user = db.query(User).filter(User.id == user_id).first()
-                
-                if user:
-                    if review_status in ["completed", "approved"]:
-                        user.is_verified = True
-                        db.commit()
-                        print(f"User {user_id} marked as verified")
-                    elif review_status in ["rejected", "onHold"]:
-                        user.is_verified = False
-                        db.commit()
-                        print(f"User {user_id} verification status: {review_status}")
-
-        return {"status": "ok"}
-    except Exception as e:
-        print(f"Webhook processing error: {e}")
-        return {"status": "error", "message": str(e)}
+# NOTE: Sumsub webhook endpoint has been moved to /webhook/sumsub/webhook
+# See app/routers/webhook/sumsub_webhook.py for the comprehensive webhook handler
 
 
 @router.get("/sumsub/status", response_model=SumsubStatusResponse)
 def get_verification_status(current_user: User = Depends(get_current_user)):
     """Get current user's verification status"""
     try:
-        external_user_id = f"user_{current_user.id}"
-        
+        external_user_id = f"user_{current_user.user_id}"
+
         # Try to get status from Sumsub
         try:
             url = f"{settings.SUMSUB_BASE_URL}/resources/applicants/{external_user_id}/status"

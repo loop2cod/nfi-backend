@@ -1,19 +1,19 @@
+"""
+Sumsub Webhook Handler
+Comprehensive webhook processing for all Sumsub verification events
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
-from typing import Dict, Any
-import json
-import logging
+from datetime import datetime, timezone
 import hmac
 import hashlib
-import os
-from datetime import datetime
+import logging
 
 from app.core.database import get_db
-from app.core.config import settings
-from app.core.bvnk_client import get_bvnk_client
 from app.models.user import User
 from app.models.verification_event import VerificationEvent
-from app.models.schemas import SumsubWebhookEvent, WebhookProcessingResponse
+from app.core.config import settings
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -22,332 +22,260 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def verify_webhook_signature(payload: bytes, signature: str, secret: str) -> bool:
-    """
-    Verify Sumsub webhook signature for security.
-    
-    Sumsub signs webhook payloads with HMAC SHA256 using your webhook secret.
-    The signature is sent in the X-Sumsub-Signature header.
-    """
-    if not secret:
-        logger.warning("Webhook signature verification skipped - no secret configured")
-        return True  # Allow in development
-    
-    if not signature:
-        logger.error("Missing webhook signature")
+def verify_sumsub_webhook_signature(payload: str, signature: str) -> bool:
+    """Verify that webhook signature is valid"""
+    try:
+        expected_signature = hmac.new(
+            settings.SUMSUB_SECRET_KEY.encode('utf-8'),
+            payload.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(signature, expected_signature)
+    except Exception as e:
+        logger.error(f"Signature verification error: {e}")
         return False
-    
-    # Sumsub sends signature in format: "sha256=<signature>"
-    if signature.startswith("sha256="):
-        signature = signature[7:]
-    
-    # Calculate expected signature
-    expected_signature = hmac.new(
-        secret.encode(),
-        payload,
-        hashlib.sha256
-    ).hexdigest()
-    
-    # Compare signatures securely
-    return hmac.compare_digest(signature, expected_signature)
 
 
-@router.post("/sumsub", response_model=WebhookProcessingResponse)
-async def handle_sumsub_webhook(
-    request: Request,
-    db: Session = Depends(get_db)
-):
+def get_user_by_external_id(db: Session, external_user_id: str) -> User | None:
     """
-    Handle Sumsub webhook events.
-    
-    This endpoint receives webhook notifications from Sumsub when verification
-    status changes occur. It processes the event and updates the user's 
-    verification status accordingly.
+    Get user by external user ID (user_id field, format: NF-MMYYYY###)
+    """
+    try:
+        # External user ID format: "user_NF-012025001"
+        if external_user_id.startswith("user_"):
+            user_id = external_user_id.replace("user_", "")
+            user = db.query(User).filter(User.user_id == user_id).first()
+            return user
+        return None
+    except Exception as e:
+        logger.error(f"Error getting user by external ID {external_user_id}: {e}")
+        return None
+
+
+def update_user_verification_status(
+    user: User,
+    event_type: str,
+    review_status: str,
+    review_result: dict,
+    applicant_id: str,
+    inspection_id: str,
+    db: Session
+) -> None:
+    """
+    Update user verification status based on webhook event
+    """
+    try:
+        # Store applicant and inspection IDs
+        user.sumsub_applicant_id = applicant_id
+        user.sumsub_inspection_id = inspection_id
+
+        # Handle different event types
+        if event_type in ["applicantCreated", "applicantActivated", "applicantReset"]:
+            user.verification_status = "not_started"
+            user.is_verified = False
+            user.verification_result = None
+
+        elif event_type == "applicantPending":
+            user.verification_status = "pending"
+            user.is_verified = False
+
+        elif event_type in ["applicantAwaitingUser", "applicantAwaitingService"]:
+            user.verification_status = "pending"
+            # Keep current is_verified status
+
+        elif event_type == "applicantOnHold":
+            user.verification_status = "on_hold"
+            user.is_verified = False
+
+        elif event_type in ["applicantReviewed", "applicantWorkflowCompleted"]:
+            user.verification_status = "completed"
+
+            # Check review result
+            review_answer = review_result.get("reviewAnswer") if review_result else None
+
+            if review_answer == "GREEN":
+                user.is_verified = True
+                user.verification_result = "GREEN"
+                user.verification_completed_at = datetime.now(timezone.utc)
+                logger.info(f"User {user.user_id} verified successfully")
+            elif review_answer == "RED":
+                user.is_verified = False
+                user.verification_result = "RED"
+                user.verification_completed_at = datetime.now(timezone.utc)
+
+                # Store reject labels if available
+                reject_labels = review_result.get("rejectLabels", [])
+                if reject_labels:
+                    user.verification_error_message = f"Rejected: {', '.join(reject_labels)}"
+                logger.info(f"User {user.user_id} verification rejected")
+
+        elif event_type == "applicantWorkflowFailed":
+            user.verification_status = "failed"
+            user.is_verified = False
+            user.verification_result = "RED"
+
+            # Store failure reason
+            review_answer = review_result.get("reviewAnswer") if review_result else None
+            reject_labels = review_result.get("rejectLabels", []) if review_result else []
+            if reject_labels:
+                user.verification_error_message = f"Failed: {', '.join(reject_labels)}"
+
+        elif event_type == "applicantDeactivated":
+            user.verification_status = "deactivated"
+            user.is_verified = False
+
+        elif event_type == "applicantDeleted":
+            user.verification_status = "deleted"
+            user.is_verified = False
+
+        db.commit()
+        logger.info(f"Updated user {user.user_id} verification status: {user.verification_status}")
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error updating user verification status: {e}")
+        raise
+
+
+def store_verification_event(
+    user: User,
+    event_data: dict,
+    db: Session
+) -> None:
+    """
+    Store verification event in database
+    """
+    try:
+        event = VerificationEvent(
+            user_id=user.id,
+            event_type=event_data.get("type"),
+            applicant_id=event_data.get("applicantId"),
+            inspection_id=event_data.get("inspectionId"),
+            correlation_id=event_data.get("correlationId"),
+            external_user_id=event_data.get("externalUserId"),
+            level_name=event_data.get("levelName"),
+            review_status=event_data.get("reviewStatus"),
+            review_result=event_data.get("reviewResult", {}).get("reviewAnswer") if event_data.get("reviewResult") else None,
+            sandbox_mode=event_data.get("sandboxMode", False),
+            created_at_ms=event_data.get("createdAtMs"),
+            raw_data=event_data,
+            processed=True
+        )
+
+        db.add(event)
+        db.commit()
+        logger.info(f"Stored verification event: {event.event_type} for user {user.user_id}")
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error storing verification event: {e}")
+        # Don't raise - we don't want to fail the webhook if event storage fails
+
+
+@router.post("/sumsub/webhook")
+async def sumsub_webhook(request: Request, db: Session = Depends(get_db)):
+    """
+    Handle Sumsub webhooks for verification status updates
+
+    Processes all Sumsub webhook event types:
+    - applicantCreated: Applicant created
+    - applicantPending: Under review
+    - applicantReviewed: Review completed (GREEN/RED)
+    - applicantOnHold: Review on hold
+    - applicantAwaitingUser: Waiting for user action
+    - applicantAwaitingService: Waiting for service
+    - applicantWorkflowCompleted: Workflow completed
+    - applicantWorkflowFailed: Workflow failed
+    - applicantReset: Verification reset
+    - applicantActivated: Applicant activated
+    - applicantDeactivated: Applicant deactivated
+    - applicantDeleted: Applicant deleted
+    - And more...
     """
     try:
         # Get raw body for signature verification
         body = await request.body()
-        
-        # Verify webhook signature for security
-        signature = request.headers.get("x-sumsub-signature", "")
-        webhook_secret = settings.SUMSUB_WEBHOOK_SECRET or ""
-        
-        if not verify_webhook_signature(body, signature, webhook_secret):
-            logger.error("Webhook signature verification failed")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid webhook signature"
-            )
-        
-        # Parse JSON payload
-        try:
-            payload = json.loads(body.decode('utf-8'))
-        except json.JSONDecodeError:
-            logger.error("Invalid JSON payload received")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid JSON payload"
-            )
-        
-        logger.info(f"Received Sumsub webhook: {payload.get('type', 'unknown')} for applicant {payload.get('applicantId', 'unknown')}")
-        
+        payload = body.decode('utf-8')
+
+        # Verify webhook signature
+        signature = request.headers.get('X-Payload-Digest-Alg-SHA256')
+        if signature:
+            if not verify_sumsub_webhook_signature(payload, signature):
+                logger.warning("Invalid webhook signature")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid webhook signature"
+                )
+        else:
+            logger.warning("No signature provided in webhook")
+
+        # Parse webhook data
+        data = await request.json()
+
+        # Extract webhook fields
+        event_type = data.get("type")
+        external_user_id = data.get("externalUserId")
+        applicant_id = data.get("applicantId")
+        inspection_id = data.get("inspectionId")
+        review_status = data.get("reviewStatus")
+        review_result = data.get("reviewResult")
+        sandbox_mode = data.get("sandboxMode", False)
+
+        logger.info(f"Received Sumsub webhook: {event_type} for {external_user_id}")
+
         # Validate required fields
-        if not payload.get('applicantId') or not payload.get('type'):
-            logger.error("Missing required fields in webhook payload")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing required fields: applicantId, type"
-            )
-        
-        # Find user by applicant ID
-        user = db.query(User).filter(User.sumsub_applicant_id == payload.get('applicantId')).first()
-        
+        if not event_type or not external_user_id:
+            logger.error(f"Missing required fields in webhook: {data}")
+            return {"status": "error", "message": "Missing required fields"}
+
+        # Get user by external user ID
+        user = get_user_by_external_id(db, external_user_id)
+
         if not user:
-            logger.warning(f"User not found for applicant ID: {payload.get('applicantId')}")
-            # Still return success but don't process
-            return WebhookProcessingResponse(
-                success=True,
-                message=f"User not found for applicant ID: {payload.get('applicantId')}",
-                event_processed=False
-            )
-        
-        # Create verification event record
-        verification_event = VerificationEvent(
-            user_id=user.id,
-            event_type=payload.get('type'),
-            event_data=payload,
-            applicant_id=payload.get('applicantId'),
-            inspection_id=payload.get('inspectionId'),
-            correlation_id=payload.get('correlationId'),
-            review_status=payload.get('reviewStatus'),
-            review_result=payload.get('reviewResult', {}).get('reviewAnswer') if payload.get('reviewResult') else None,
-            level_name=payload.get('levelName'),
-            external_user_id=payload.get('externalUserId'),
-            sandbox_mode=str(payload.get('sandboxMode', False)),
-            client_id=payload.get('clientId'),
-            processed=False
+            logger.error(f"User not found for external ID: {external_user_id}")
+            return {"status": "error", "message": f"User not found: {external_user_id}"}
+
+        # Log sandbox mode if enabled
+        if sandbox_mode:
+            logger.info(f"Webhook is from sandbox mode")
+
+        # Update user verification status
+        update_user_verification_status(
+            user=user,
+            event_type=event_type,
+            review_status=review_status,
+            review_result=review_result,
+            applicant_id=applicant_id,
+            inspection_id=inspection_id,
+            db=db
         )
-        
-        db.add(verification_event)
-        
-        # Process the webhook event
-        processing_result = await process_verification_event(db, user, payload)
-        
-        # Update event as processed
-        verification_event.processed = True
-        if not processing_result.get('success'):
-            verification_event.error_message = processing_result.get('error_message')
-        
-        db.commit()
-        
-        logger.info(f"Successfully processed webhook event {payload.get('type')} for user {user.id}")
-        
-        return WebhookProcessingResponse(
-            success=True,
-            message="Webhook processed successfully",
-            user_id=user.id,
-            event_processed=True
+
+        # Store verification event
+        store_verification_event(
+            user=user,
+            event_data=data,
+            db=db
         )
-        
+
+        return {
+            "status": "ok",
+            "message": f"Processed {event_type} for user {user.user_id}"
+        }
+
     except HTTPException:
-        # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        logger.error(f"Error processing webhook: {str(e)}")
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing webhook: {str(e)}"
-        )
-
-
-async def process_verification_event(db: Session, user: User, payload: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Process different types of verification events and update user status accordingly.
-    """
-    event_type = payload.get('type')
-    review_status = payload.get('reviewStatus')
-    review_result = payload.get('reviewResult', {}).get('reviewAnswer') if payload.get('reviewResult') else None
-    
-    try:
-        # Update common fields
-        if payload.get('applicantId') and not user.sumsub_applicant_id:
-            user.sumsub_applicant_id = payload.get('applicantId')
-        
-        if payload.get('inspectionId'):
-            user.sumsub_inspection_id = payload.get('inspectionId')
-            
-        if payload.get('levelName'):
-            user.verification_level_name = payload.get('levelName')
-        
-        # Process based on event type
-        if event_type == "applicantCreated":
-            user.verification_status = "pending"
-            logger.info(f"User {user.id} verification started - applicant created")
-            
-        elif event_type == "applicantPending":
-            user.verification_status = "pending"
-            logger.info(f"User {user.id} verification pending review")
-            
-        elif event_type == "applicantReviewed":
-            user.verification_status = "completed"
-            user.verification_result = review_result
-            user.verification_completed_at = datetime.utcnow()
-            
-            if review_result == "GREEN":
-                user.is_verified = True
-                user.verification_error_message = None
-                logger.info(f"User {user.id} verification completed successfully")
-
-                # Create BVNK customer after successful KYC
-                if not user.bvnk_customer_id:
-                    try:
-                        bvnk_client = get_bvnk_client()
-                        customer_data = bvnk_client.create_customer(
-                            external_reference=user.user_id,
-                            email=user.email,
-                            metadata={
-                                "user_id": user.user_id,
-                                "verified_at": datetime.utcnow().isoformat(),
-                                "verification_level": user.verification_level_name or "basic"
-                            }
-                        )
-                        user.bvnk_customer_id = customer_data.get('id')
-                        user.bvnk_customer_created_at = datetime.utcnow()
-                        logger.info(f"BVNK customer created for user {user.id}: {user.bvnk_customer_id}")
-                    except Exception as e:
-                        logger.error(f"Failed to create BVNK customer for user {user.id}: {str(e)}")
-                        # Don't fail the entire process if BVNK creation fails
-                        user.verification_error_message = f"KYC approved but BVNK customer creation pending: {str(e)}"
-            elif review_result == "RED":
-                user.is_verified = False
-                reject_labels = payload.get('reviewResult', {}).get('rejectLabels', [])
-                user.verification_error_message = f"Verification rejected: {', '.join(reject_labels)}"
-                logger.info(f"User {user.id} verification rejected: {reject_labels}")
-                
-        elif event_type == "applicantOnHold":
-            user.verification_status = "on_hold"
-            logger.info(f"User {user.id} verification on hold")
-            
-        elif event_type == "applicantAwaitingUser":
-            user.verification_status = "awaiting_user"
-            logger.info(f"User {user.id} verification awaiting user action")
-            
-        elif event_type == "applicantAwaitingService":
-            user.verification_status = "awaiting_service"
-            logger.info(f"User {user.id} verification awaiting service")
-            
-        elif event_type in ["applicantWorkflowCompleted", "applicantWorkflowFailed"]:
-            user.verification_status = "completed"
-            user.verification_result = review_result
-            user.verification_completed_at = datetime.utcnow()
-            
-            if review_result == "GREEN":
-                user.is_verified = True
-                user.verification_error_message = None
-
-                # Create BVNK customer after successful KYC workflow
-                if not user.bvnk_customer_id:
-                    try:
-                        bvnk_client = get_bvnk_client()
-                        customer_data = bvnk_client.create_customer(
-                            external_reference=user.user_id,
-                            email=user.email,
-                            metadata={
-                                "user_id": user.user_id,
-                                "verified_at": datetime.utcnow().isoformat(),
-                                "verification_level": user.verification_level_name or "basic"
-                            }
-                        )
-                        user.bvnk_customer_id = customer_data.get('id')
-                        user.bvnk_customer_created_at = datetime.utcnow()
-                        logger.info(f"BVNK customer created for user {user.id}: {user.bvnk_customer_id}")
-                    except Exception as e:
-                        logger.error(f"Failed to create BVNK customer for user {user.id}: {str(e)}")
-                        user.verification_error_message = f"KYC approved but BVNK customer creation pending: {str(e)}"
-            else:
-                user.is_verified = False
-                reject_labels = payload.get('reviewResult', {}).get('rejectLabels', [])
-                user.verification_error_message = f"Workflow failed: {', '.join(reject_labels)}"
-                
-        elif event_type == "applicantReset":
-            user.verification_status = "not_started"
-            user.verification_result = None
-            user.is_verified = False
-            user.verification_completed_at = None
-            user.verification_error_message = None
-            logger.info(f"User {user.id} verification reset")
-
-        elif event_type == "applicantActionPending":
-            # Action-based verification pending
-            logger.info(f"User {user.id} action verification pending")
-
-        elif event_type == "applicantActionReviewed":
-            # Action-based verification reviewed
-            action_result = payload.get('reviewResult', {}).get('reviewAnswer') if payload.get('reviewResult') else None
-            if action_result == "GREEN":
-                logger.info(f"User {user.id} action verification approved")
-            elif action_result == "RED":
-                logger.info(f"User {user.id} action verification rejected")
-            else:
-                logger.info(f"User {user.id} action verification reviewed with result: {action_result}")
-
-        elif event_type == "applicantActionOnHold":
-            # Action-based verification on hold
-            logger.info(f"User {user.id} action verification on hold")
-
-        elif event_type == "applicantPersonalInfoChanged":
-            # Personal information changed
-            logger.info(f"User {user.id} personal information changed")
-
-        elif event_type == "applicantPersonalDataDeleted":
-            # Personal data deleted
-            logger.info(f"User {user.id} personal data deleted")
-
-        elif event_type == "applicantTagsChanged":
-            # Tags changed
-            logger.info(f"User {user.id} tags changed")
-
-        elif event_type == "applicantActivated":
-            # Applicant activated
-            logger.info(f"User {user.id} applicant activated")
-
-        elif event_type == "applicantDeactivated":
-            # Applicant deactivated
-            logger.info(f"User {user.id} applicant deactivated")
-
-        elif event_type == "applicantDeleted":
-            # Applicant deleted - mark as not verified
-            user.verification_status = "not_started"
-            user.verification_result = None
-            user.is_verified = False
-            user.verification_completed_at = None
-            user.verification_error_message = "Applicant deleted"
-            logger.info(f"User {user.id} applicant deleted")
-
-        elif event_type == "applicantLevelChanged":
-            # Verification level changed
-            new_level = payload.get('levelName')
-            if new_level:
-                user.verification_level_name = new_level
-                logger.info(f"User {user.id} verification level changed to: {new_level}")
-
-        # Update verification steps tracking
-        if not user.verification_steps:
-            user.verification_steps = {}
-        
-        user.verification_steps[event_type] = {
-            'timestamp': datetime.utcnow().isoformat(),
-            'status': review_status,
-            'result': review_result,
-            'data': payload
+        logger.error(f"Webhook processing error: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "message": str(e)
         }
-        
-        db.commit()
-        
-        return {'success': True}
-        
-    except Exception as e:
-        logger.error(f"Error processing verification event: {str(e)}")
-        db.rollback()
-        return {'success': False, 'error_message': str(e)}
+
+
+@router.get("/sumsub/webhook/test")
+async def test_webhook():
+    """Test endpoint to verify webhook is accessible"""
+    return {
+        "status": "ok",
+        "message": "Webhook endpoint is accessible"
+    }
