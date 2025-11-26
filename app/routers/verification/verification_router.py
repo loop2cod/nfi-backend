@@ -21,6 +21,7 @@ from app.routers.auth.auth_router import get_current_user
 from app.models.user import User
 from app.models.customer_verification_data import CustomerVerificationData
 from app.models.verification_event import VerificationEvent
+from app.models.verification_audit_log import VerificationAuditLog
 from app.schemas.verification_schemas import (
     PersonalInformationSchema,
     TaxInformationSchema,
@@ -273,6 +274,18 @@ async def save_personal_information(
         db.commit()
         db.refresh(verification_data)
 
+        # Create audit log entry
+        audit_log = VerificationAuditLog(
+            user_id=current_user.id,
+            admin_id=None,  # User action, no admin
+            action_type="data_updated",
+            step_number=1,
+            step_name="Personal Information",
+            comment="User updated personal information (Step 1)"
+        )
+        db.add(audit_log)
+        db.commit()
+
         logger.info(f"Step 1 completed for user {current_user.user_id}")
 
         return VerificationStepResponse(
@@ -334,6 +347,18 @@ async def mark_sumsub_completed(
 
         db.commit()
         db.refresh(verification_data)
+
+        # Create audit log entry
+        audit_log = VerificationAuditLog(
+            user_id=current_user.id,
+            admin_id=None,
+            action_type="data_updated",
+            step_number=2,
+            step_name="Document Verification (Sumsub)",
+            comment="User completed Sumsub document verification (Step 2)"
+        )
+        db.add(audit_log)
+        db.commit()
 
         logger.info(f"Step 2 completed for user {current_user.user_id}")
 
@@ -400,6 +425,18 @@ async def save_tax_information(
 
         db.commit()
         db.refresh(verification_data)
+
+        # Create audit log entry
+        audit_log = VerificationAuditLog(
+            user_id=current_user.id,
+            admin_id=None,
+            action_type="data_updated",
+            step_number=3,
+            step_name="Tax Information",
+            comment="User updated tax information (Step 3)"
+        )
+        db.add(audit_log)
+        db.commit()
 
         logger.info(f"Step 3 completed for user {current_user.user_id}")
 
@@ -482,6 +519,18 @@ async def save_cdd_information(
 
         db.commit()
         db.refresh(verification_data)
+
+        # Create audit log entry
+        audit_log = VerificationAuditLog(
+            user_id=current_user.id,
+            admin_id=None,
+            action_type="data_updated",
+            step_number=4,
+            step_name="Customer Due Diligence (CDD)",
+            comment="User updated CDD information (Step 4)" + (" - All steps completed!" if all_steps_completed else "")
+        )
+        db.add(audit_log)
+        db.commit()
 
         logger.info(f"Step 4 completed for user {current_user.user_id}")
 

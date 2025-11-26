@@ -56,3 +56,4 @@ class User(Base):
     wallets = relationship("Wallet", back_populates="user", lazy="dynamic")
     login_activities = relationship("LoginActivity", back_populates="user", lazy="dynamic")
     verification_data = relationship("CustomerVerificationData", back_populates="user", uselist=False)
+    verification_audit_logs = relationship("VerificationAuditLog", back_populates="user", lazy="dynamic")

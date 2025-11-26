@@ -47,6 +47,7 @@ class AdminUser(Base):
 
     # Relationships
     login_activities = relationship("AdminLoginHistory", back_populates="admin_user", lazy="dynamic")
+    verification_audit_logs = relationship("VerificationAuditLog", back_populates="admin", lazy="dynamic")
 
     def __repr__(self):
         return f"<AdminUser(username='{self.username}', email='{self.email}', role='{self.role}')>"

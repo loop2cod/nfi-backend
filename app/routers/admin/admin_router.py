@@ -14,6 +14,7 @@ from app.models.user import User
 from app.models.admin_user import AdminUser
 from app.models.admin_login_history import AdminLoginHistory
 from app.models.customer_verification_data import CustomerVerificationData
+from app.models.verification_audit_log import VerificationAuditLog
 from app.routers.admin.admin_auth_router import get_current_admin
 from pydantic import BaseModel, EmailStr
 from decimal import Decimal
@@ -145,6 +146,35 @@ class CustomerVerificationDataResponse(BaseModel):
         from_attributes = True
 
 
+class AuditLogResponse(BaseModel):
+    """Response model for audit log entry"""
+    id: int
+    user_id: int
+    admin_id: Optional[int] = None
+    action_type: str
+    old_status: Optional[str] = None
+    new_status: Optional[str] = None
+    old_result: Optional[str] = None
+    new_result: Optional[str] = None
+    step_number: Optional[int] = None
+    step_name: Optional[str] = None
+    comment: Optional[str] = None
+    admin_message: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AuditLogListResponse(BaseModel):
+    """Response model for paginated audit log list"""
+    logs: List[AuditLogResponse]
+    total: int
+    page: int
+    size: int
+    total_pages: int
+
+
 @router.get("/customers", response_model=CustomerListResponse)
 def list_customers(
     page: int = Query(0, ge=0, description="Page number (starts from 0)"),
@@ -255,12 +285,48 @@ def get_customer_verification_data(
     if not verification_data:
         return CustomerVerificationDataResponse()
 
-    # Convert date_of_birth to string if it exists
-    response_data = CustomerVerificationDataResponse.from_orm(verification_data)
-    if verification_data.date_of_birth:
-        response_data.date_of_birth = verification_data.date_of_birth.isoformat()
+    # Convert to dict and handle date_of_birth conversion before validation
+    data_dict = {
+        # Personal Info (Step 1)
+        "first_name": verification_data.first_name,
+        "last_name": verification_data.last_name,
+        "date_of_birth": verification_data.date_of_birth.isoformat() if verification_data.date_of_birth else None,
+        "nationality": verification_data.nationality,
+        "email_address": verification_data.email_address,
+        "phone_number": verification_data.phone_number,
+        "address_line1": verification_data.address_line1,
+        "address_line2": verification_data.address_line2,
+        "city": verification_data.city,
+        "postal_code": verification_data.postal_code,
+        "country_code": verification_data.country_code,
+        "state_code": verification_data.state_code,
+        "country": verification_data.country,
+        # Tax Info (Step 3)
+        "tax_identification_number": verification_data.tax_identification_number,
+        "tax_residence_country_code": verification_data.tax_residence_country_code,
+        # CDD (Step 4)
+        "employment_status": verification_data.employment_status,
+        "source_of_funds": verification_data.source_of_funds,
+        "pep_status": verification_data.pep_status,
+        "account_purpose": verification_data.account_purpose,
+        "expected_monthly_volume_amount": verification_data.expected_monthly_volume_amount,
+        "expected_monthly_volume_currency": verification_data.expected_monthly_volume_currency,
+        # Progress tracking
+        "step_1_completed": verification_data.step_1_completed,
+        "step_2_completed": verification_data.step_2_completed,
+        "step_3_completed": verification_data.step_3_completed,
+        "step_4_completed": verification_data.step_4_completed,
+        "all_steps_completed": verification_data.all_steps_completed,
+        "step_1_completed_at": verification_data.step_1_completed_at,
+        "step_2_completed_at": verification_data.step_2_completed_at,
+        "step_3_completed_at": verification_data.step_3_completed_at,
+        "step_4_completed_at": verification_data.step_4_completed_at,
+        "completed_at": verification_data.completed_at,
+        "created_at": verification_data.created_at,
+        "updated_at": verification_data.updated_at,
+    }
 
-    return response_data
+    return CustomerVerificationDataResponse(**data_dict)
 
 
 @router.get("/customers/stats/summary", response_model=CustomerStatsResponse)
@@ -298,6 +364,130 @@ def get_my_login_history(
     return login_history
 
 
+@router.post("/customers/{user_id}/update-verification-status")
+def update_customer_verification_status(
+    user_id: str,
+    verification_status: str,
+    verification_result: Optional[str] = None,
+    verification_error_message: Optional[str] = None,
+    step_number: Optional[int] = None,
+    step_name: Optional[str] = None,
+    current_admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Update customer verification status (admin only).
+
+    Allowed statuses:
+    - "completed" with result "GREEN" → Mark as verified
+    - "completed" with result "RED" → Mark as rejected
+    - "action_required" → Request additional information (optionally specify step)
+
+    Parameters:
+    - step_number: Optional 1-4 to indicate which step needs action
+    - step_name: Optional human-readable step name
+    """
+    from datetime import datetime, timezone
+
+    customer = db.query(User).filter(User.user_id == user_id).first()
+
+    if not customer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Customer with user_id {user_id} not found"
+        )
+
+    # Store old values for audit log
+    old_status = customer.verification_status
+    old_result = customer.verification_result
+
+    # Validate status
+    valid_statuses = ["completed", "action_required", "pending", "failed"]
+    if verification_status not in valid_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid verification status. Must be one of: {', '.join(valid_statuses)}"
+        )
+
+    # Determine action type for audit log
+    action_type = "status_change"
+
+    # Update verification status
+    customer.verification_status = verification_status
+
+    if verification_status == "completed":
+        if verification_result == "GREEN":
+            customer.is_verified = True
+            customer.verification_result = "GREEN"
+            customer.verification_completed_at = datetime.now(timezone.utc)
+            customer.verification_error_message = None
+            message = f"Customer {user_id} marked as verified"
+            action_type = "approved"
+        elif verification_result == "RED":
+            customer.is_verified = False
+            customer.verification_result = "RED"
+            customer.verification_completed_at = datetime.now(timezone.utc)
+            customer.verification_error_message = verification_error_message or "Verification rejected by admin"
+            message = f"Customer {user_id} marked as rejected"
+            action_type = "rejected"
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="verification_result must be 'GREEN' or 'RED' when status is 'completed'"
+            )
+    elif verification_status == "action_required":
+        customer.is_verified = False
+        customer.verification_result = None
+        customer.verification_error_message = verification_error_message or "Additional information required"
+        message = f"Customer {user_id} requires action"
+        action_type = "action_requested"
+    elif verification_status == "pending":
+        customer.is_verified = False
+        customer.verification_result = None
+        customer.verification_error_message = None
+        message = f"Customer {user_id} status set to pending"
+    else:  # failed
+        customer.is_verified = False
+        customer.verification_result = "RED"
+        customer.verification_error_message = verification_error_message or "Verification failed"
+        message = f"Customer {user_id} marked as failed"
+
+    try:
+        db.commit()
+        db.refresh(customer)
+
+        # Create audit log entry
+        audit_log = VerificationAuditLog(
+            user_id=customer.id,
+            admin_id=current_admin.id,
+            action_type=action_type,
+            old_status=old_status,
+            new_status=verification_status,
+            old_result=old_result,
+            new_result=customer.verification_result,
+            step_number=step_number,
+            step_name=step_name,
+            admin_message=verification_error_message,
+            comment=message
+        )
+        db.add(audit_log)
+        db.commit()
+
+        return {
+            "success": True,
+            "message": message,
+            "verification_status": customer.verification_status,
+            "is_verified": customer.is_verified,
+            "verification_result": customer.verification_result
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update verification status: {str(e)}"
+        )
+
+
 @router.post("/customers/{user_id}/retry-bvnk")
 def retry_bvnk_customer_creation(
     user_id: str,
@@ -309,6 +499,7 @@ def retry_bvnk_customer_creation(
     Useful if BVNK creation failed during webhook processing.
     """
     from app.core.bvnk_client import get_bvnk_client
+    from datetime import datetime, timezone
 
     customer = db.query(User).filter(User.user_id == user_id).first()
 
@@ -337,13 +528,23 @@ def retry_bvnk_customer_creation(
             email=customer.email,
             metadata={
                 "user_id": customer.user_id,
-                "verified_at": customer.verification_completed_at.isoformat() if customer.verification_completed_at else datetime.utcnow().isoformat(),
+                "verified_at": customer.verification_completed_at.isoformat() if customer.verification_completed_at else datetime.now(timezone.utc).isoformat(),
                 "verification_level": customer.verification_level_name or "basic"
             }
         )
         customer.bvnk_customer_id = customer_data.get('id')
-        customer.bvnk_customer_created_at = datetime.utcnow()
+        customer.bvnk_customer_created_at = datetime.now(timezone.utc)
         customer.verification_error_message = None
+        db.commit()
+
+        # Create audit log entry
+        audit_log = VerificationAuditLog(
+            user_id=customer.id,
+            admin_id=current_admin.id,
+            action_type="bvnk_retry",
+            comment=f"BVNK customer created successfully by admin {current_admin.username}"
+        )
+        db.add(audit_log)
         db.commit()
 
         return {
@@ -357,3 +558,47 @@ def retry_bvnk_customer_creation(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create BVNK customer: {str(e)}"
         )
+
+
+@router.get("/customers/{user_id}/audit-logs", response_model=AuditLogListResponse)
+def get_customer_audit_logs(
+    user_id: str,
+    page: int = Query(0, ge=0, description="Page number (starts from 0)"),
+    size: int = Query(20, ge=1, le=100, description="Number of records per page"),
+    current_admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Get audit logs for a specific customer with pagination.
+    Shows all verification-related actions and changes.
+    """
+    # First verify customer exists
+    customer = db.query(User).filter(User.user_id == user_id).first()
+
+    if not customer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Customer with user_id {user_id} not found"
+        )
+
+    # Build query for audit logs
+    query = db.query(VerificationAuditLog).filter(
+        VerificationAuditLog.user_id == customer.id
+    ).order_by(VerificationAuditLog.created_at.desc())
+
+    # Get total count
+    total = query.count()
+
+    # Calculate total pages
+    total_pages = (total + size - 1) // size if total > 0 else 0
+
+    # Apply pagination
+    logs = query.offset(page * size).limit(size).all()
+
+    return AuditLogListResponse(
+        logs=logs,
+        total=total,
+        page=page,
+        size=size,
+        total_pages=total_pages
+    )
