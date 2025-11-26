@@ -87,6 +87,66 @@ def migrate_database(db_path="nfi.db"):
             cursor.execute("ALTER TABLE users ADD COLUMN bvnk_customer_created_at TIMESTAMP")
             print("✓ bvnk_customer_created_at column added")
 
+        if 'bvnk_customer_status' not in columns:
+            print("Adding bvnk_customer_status column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN bvnk_customer_status VARCHAR")
+            print("✓ bvnk_customer_status column added")
+
+        if 'first_name' not in columns:
+            print("Adding first_name column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN first_name VARCHAR(100)")
+            print("✓ first_name column added")
+
+        if 'last_name' not in columns:
+            print("Adding last_name column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN last_name VARCHAR(100)")
+            print("✓ last_name column added")
+
+        if 'date_of_birth' not in columns:
+            print("Adding date_of_birth column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN date_of_birth VARCHAR")
+            print("✓ date_of_birth column added")
+
+        if 'nationality' not in columns:
+            print("Adding nationality column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN nationality VARCHAR(2)")
+            print("✓ nationality column added")
+
+        if 'phone_number' not in columns:
+            print("Adding phone_number column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN phone_number VARCHAR(20)")
+            print("✓ phone_number column added")
+
+        if 'address_line1' not in columns:
+            print("Adding address_line1 column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN address_line1 VARCHAR(255)")
+            print("✓ address_line1 column added")
+
+        if 'address_line2' not in columns:
+            print("Adding address_line2 column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN address_line2 VARCHAR(255)")
+            print("✓ address_line2 column added")
+
+        if 'postal_code' not in columns:
+            print("Adding postal_code column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN postal_code VARCHAR(20)")
+            print("✓ postal_code column added")
+
+        if 'city' not in columns:
+            print("Adding city column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN city VARCHAR(100)")
+            print("✓ city column added")
+
+        if 'country_code' not in columns:
+            print("Adding country_code column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN country_code VARCHAR(2)")
+            print("✓ country_code column added")
+
+        if 'state_code' not in columns:
+            print("Adding state_code column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN state_code VARCHAR(10)")
+            print("✓ state_code column added")
+
         conn.commit()
         print("\n✅ Database migration completed successfully!")
 
@@ -110,8 +170,5 @@ if __name__ == "__main__":
     print(f"Database: {db_path}")
     print()
 
-    confirm = input("Do you want to proceed with the migration? (yes/no): ")
-    if confirm.lower() == 'yes':
-        migrate_database(db_path)
-    else:
-        print("Migration cancelled.")
+    # Auto-run migration without confirmation for automated deployment
+    migrate_database(db_path)
