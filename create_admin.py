@@ -24,6 +24,7 @@ import app.models.user
 import app.models.user_counter
 import app.models.verification_event
 import app.models.wallet
+import app.models.customer_verification_data
 
 def create_admin_user(email: str, password: str, username: str = None, full_name: str = None, is_super_admin: bool = False):
     """Create an admin user for the nfi-client-dashboard"""
