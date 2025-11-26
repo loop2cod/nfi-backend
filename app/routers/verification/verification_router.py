@@ -517,6 +517,10 @@ async def save_cdd_information(
             verification_data.all_steps_completed = True
             verification_data.completed_at = datetime.now(timezone.utc)
 
+            # Update user verification status to pending for admin review
+            current_user.verification_status = "pending"
+            logger.info(f"All steps completed for user {current_user.user_id}. Status set to 'pending' for admin review.")
+
         db.commit()
         db.refresh(verification_data)
 
@@ -524,10 +528,12 @@ async def save_cdd_information(
         audit_log = VerificationAuditLog(
             user_id=current_user.id,
             admin_id=None,
-            action_type="data_updated",
+            action_type="data_updated" if not all_steps_completed else "verification_submitted",
+            old_status=None,
+            new_status="pending" if all_steps_completed else None,
             step_number=4,
             step_name="Customer Due Diligence (CDD)",
-            comment="User updated CDD information (Step 4)" + (" - All steps completed!" if all_steps_completed else "")
+            comment="User updated CDD information (Step 4)" + (" - All steps completed! Verification submitted for admin review." if all_steps_completed else "")
         )
         db.add(audit_log)
         db.commit()
@@ -539,7 +545,7 @@ async def save_cdd_information(
 
         return VerificationStepResponse(
             success=True,
-            message="CDD information saved successfully. All verification steps completed!" if all_steps_completed else "CDD information saved successfully",
+            message="CDD information saved successfully. Your verification has been submitted for admin review!" if all_steps_completed else "CDD information saved successfully",
             step_number=4,
             step_completed=True,
             next_step=next_step,
