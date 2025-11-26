@@ -1,14 +1,15 @@
 """
 Database Migration Script
-Migrates existing database to add new fields:
+Migrates existing database to add new fields and tables:
 - user_id (NF-MMYYYY###)
-- bvnk_customer_id
-- bvnk_customer_created_at
+- bvnk_customer_id, bvnk_customer_created_at, bvnk_customer_status
+- Customer information fields (first_name, last_name, DOB, nationality, phone, address)
 - user_counters table
+- customer_verification_data table (multi-step verification)
 """
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def migrate_database(db_path="nfi.db"):
@@ -52,7 +53,7 @@ def migrate_database(db_path="nfi.db"):
             existing_users = cursor.fetchall()
 
             if existing_users:
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)
                 month_year = f"{now.month:02d}{now.year}"
 
                 # Get or create counter for current month
@@ -146,6 +147,68 @@ def migrate_database(db_path="nfi.db"):
             print("Adding state_code column to users table...")
             cursor.execute("ALTER TABLE users ADD COLUMN state_code VARCHAR(10)")
             print("✓ state_code column added")
+
+        # Check if customer_verification_data table exists
+        cursor.execute("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name='customer_verification_data'
+        """)
+        if not cursor.fetchone():
+            print("Creating customer_verification_data table...")
+            cursor.execute("""
+                CREATE TABLE customer_verification_data (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL UNIQUE,
+
+                    -- Step 1: Personal Information
+                    first_name VARCHAR(100),
+                    last_name VARCHAR(100),
+                    date_of_birth DATE,
+                    nationality VARCHAR(2),
+                    email_address VARCHAR(255),
+                    phone_number VARCHAR(20),
+                    address_line1 VARCHAR(255),
+                    address_line2 VARCHAR(255),
+                    postal_code VARCHAR(20),
+                    city VARCHAR(100),
+                    country_code VARCHAR(2),
+                    state_code VARCHAR(10),
+                    country VARCHAR(100),
+
+                    -- Step 3: Tax Information
+                    tax_identification_number VARCHAR(50),
+                    tax_residence_country_code VARCHAR(2),
+
+                    -- Step 4: CDD
+                    employment_status VARCHAR(50),
+                    source_of_funds VARCHAR(50),
+                    pep_status VARCHAR(50),
+                    account_purpose VARCHAR(50),
+                    expected_monthly_volume_amount DECIMAL(10, 2),
+                    expected_monthly_volume_currency VARCHAR(3),
+
+                    -- Progress tracking
+                    step_1_completed BOOLEAN DEFAULT 0,
+                    step_1_completed_at TIMESTAMP,
+                    step_2_completed BOOLEAN DEFAULT 0,
+                    step_2_completed_at TIMESTAMP,
+                    step_3_completed BOOLEAN DEFAULT 0,
+                    step_3_completed_at TIMESTAMP,
+                    step_4_completed BOOLEAN DEFAULT 0,
+                    step_4_completed_at TIMESTAMP,
+                    all_steps_completed BOOLEAN DEFAULT 0,
+                    completed_at TIMESTAMP,
+
+                    -- Metadata
+                    step_data JSON,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP,
+
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            """)
+            cursor.execute("CREATE UNIQUE INDEX ix_customer_verification_data_user_id ON customer_verification_data (user_id)")
+            print("✓ customer_verification_data table created")
 
         conn.commit()
         print("\n✅ Database migration completed successfully!")
