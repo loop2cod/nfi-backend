@@ -13,8 +13,10 @@ from app.core.database import get_db
 from app.models.user import User
 from app.models.admin_user import AdminUser
 from app.models.admin_login_history import AdminLoginHistory
+from app.models.customer_verification_data import CustomerVerificationData
 from app.routers.admin.admin_auth_router import get_current_admin
 from pydantic import BaseModel, EmailStr
+from decimal import Decimal
 
 
 router = APIRouter()
@@ -92,6 +94,55 @@ class LoginHistoryResponse(BaseModel):
         json_encoders = {
             datetime: lambda v: v.replace(tzinfo=None).isoformat() + 'Z' if v else None
         }
+
+
+class CustomerVerificationDataResponse(BaseModel):
+    """Response model for customer verification data"""
+    # Personal Info (Step 1)
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    nationality: Optional[str] = None
+    email_address: Optional[str] = None
+    phone_number: Optional[str] = None
+    address_line1: Optional[str] = None
+    address_line2: Optional[str] = None
+    city: Optional[str] = None
+    postal_code: Optional[str] = None
+    country_code: Optional[str] = None
+    state_code: Optional[str] = None
+    country: Optional[str] = None
+
+    # Tax Info (Step 3)
+    tax_identification_number: Optional[str] = None
+    tax_residence_country_code: Optional[str] = None
+
+    # CDD (Step 4)
+    employment_status: Optional[str] = None
+    source_of_funds: Optional[str] = None
+    pep_status: Optional[str] = None
+    account_purpose: Optional[str] = None
+    expected_monthly_volume_amount: Optional[Decimal] = None
+    expected_monthly_volume_currency: Optional[str] = None
+
+    # Progress tracking
+    step_1_completed: bool = False
+    step_2_completed: bool = False
+    step_3_completed: bool = False
+    step_4_completed: bool = False
+    all_steps_completed: bool = False
+
+    step_1_completed_at: Optional[datetime] = None
+    step_2_completed_at: Optional[datetime] = None
+    step_3_completed_at: Optional[datetime] = None
+    step_4_completed_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
 
 
 @router.get("/customers", response_model=CustomerListResponse)
@@ -173,6 +224,43 @@ def get_customer_detail(
         )
 
     return customer
+
+
+@router.get("/customers/{user_id}/verification-data", response_model=CustomerVerificationDataResponse)
+def get_customer_verification_data(
+    user_id: str,
+    current_admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Get detailed verification data for a specific customer.
+    Returns all information collected during the multi-step verification process.
+    Accessible by authenticated admin users only.
+    """
+    # First, verify the customer exists
+    customer = db.query(User).filter(User.user_id == user_id).first()
+
+    if not customer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Customer with user_id {user_id} not found"
+        )
+
+    # Get verification data
+    verification_data = db.query(CustomerVerificationData).filter(
+        CustomerVerificationData.user_id == customer.id
+    ).first()
+
+    # If no verification data exists yet, return empty structure
+    if not verification_data:
+        return CustomerVerificationDataResponse()
+
+    # Convert date_of_birth to string if it exists
+    response_data = CustomerVerificationDataResponse.from_orm(verification_data)
+    if verification_data.date_of_birth:
+        response_data.date_of_birth = verification_data.date_of_birth.isoformat()
+
+    return response_data
 
 
 @router.get("/customers/stats/summary", response_model=CustomerStatsResponse)
