@@ -157,11 +157,18 @@ async def create_bvnk_customer(
                 error_detail = str(e)
                 if hasattr(e, 'response') and hasattr(e.response, 'text'):
                     logger.error(f"BVNK API response: {e.response.text}")
-                    error_detail = f"{str(e)} - Response: {e.response.text}"
+                    response_text = e.response.text
+                    error_detail = f"{str(e)} - Response: {response_text}"
 
-                    # Provide helpful error message for unsupported countries
-                    if "country" in e.response.text.lower() or "400" in str(e):
-                        error_detail = f"Country '{country_code}' may not be supported for BVNK embedded wallets. Please check BVNK documentation for supported countries. Error: {e.response.text}"
+                    # Check for specific BVNK error messages
+                    if "Master Service Agreement" in response_text:
+                        error_detail = (
+                            "BVNK Account Setup Required: The Master Service Agreement must be signed in your BVNK merchant account. "
+                            "Please log in to the BVNK dashboard (https://dashboard.bvnk.com/) and complete the merchant onboarding process. "
+                            "This is a one-time setup requirement for the BVNK account."
+                        )
+                    elif "country" in response_text.lower():
+                        error_detail = f"Country '{country_code}' may not be supported for BVNK embedded wallets. Please check BVNK documentation for supported countries. Error: {response_text}"
 
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
