@@ -62,6 +62,7 @@ class WalletInfo(BaseModel):
     frozen_balance: float
     network: str
     wallet_id: str
+    status: str
     created_at: datetime
 
     class Config:
@@ -316,7 +317,8 @@ def get_customer_detail(
                     "frozen_balance": wallet.frozen_balance,
                     "network": wallet.network,
                     "wallet_id": wallet.wallet_id,
-                    "status": "active" if wallet.wallet_id in wallet_status["active"] else "deleted"
+                    "status": "active" if wallet.wallet_id in wallet_status["active"] else "deleted",
+                    "created_at": wallet.created_at
                 }
                 wallets_to_show.append(wallet_dict)
         else:
@@ -331,7 +333,8 @@ def get_customer_detail(
                     "frozen_balance": w.frozen_balance,
                     "network": w.network,
                     "wallet_id": w.wallet_id,
-                    "status": "active"
+                    "status": "active",
+                    "created_at": w.created_at
                 }
                 for w in db_wallets
             ]
@@ -778,9 +781,23 @@ def create_customer_wallets(
 
         if created_wallets:
             # Save wallet data to database
+            saved_wallets = []
             for wallet_data in created_wallets:
                 db_wallet = Wallet(**wallet_data)
                 db.add(db_wallet)
+                db.flush()  # Get the ID and created_at
+                saved_wallets.append({
+                    "id": db_wallet.id,
+                    "currency": db_wallet.currency,
+                    "address": db_wallet.address,
+                    "balance": db_wallet.balance,
+                    "available_balance": db_wallet.available_balance,
+                    "frozen_balance": db_wallet.frozen_balance,
+                    "network": db_wallet.network,
+                    "wallet_id": db_wallet.wallet_id,
+                    "status": db_wallet.status,
+                    "created_at": db_wallet.created_at
+                })
 
             db.commit()
             logger.info(f"Successfully created {len(created_wallets)} wallets for user {user_id}")
@@ -790,15 +807,15 @@ def create_customer_wallets(
                 user_id=customer.id,
                 admin_id=current_admin.id,
                 action_type="wallets_created",
-                comment=f"Admin {current_admin.username} manually created {len(created_wallets)} wallets"
+                comment=f"Admin {current_admin.username} manually created {len(saved_wallets)} wallets"
             )
             db.add(audit_log)
             db.commit()
 
             return {
                 "success": True,
-                "message": f"Successfully created {len(created_wallets)} wallets",
-                "wallets": created_wallets
+                "message": f"Successfully created {len(saved_wallets)} wallets",
+                "wallets": saved_wallets
             }
         else:
             raise HTTPException(
@@ -894,7 +911,18 @@ def create_specific_wallet(
             return {
                 "success": True,
                 "message": f"Successfully created {currency} wallet on {network}",
-                "wallet": wallet_data
+                "wallet": {
+                    "id": db_wallet.id,
+                    "currency": db_wallet.currency,
+                    "address": db_wallet.address,
+                    "balance": db_wallet.balance,
+                    "available_balance": db_wallet.available_balance,
+                    "frozen_balance": db_wallet.frozen_balance,
+                    "network": db_wallet.network,
+                    "wallet_id": db_wallet.wallet_id,
+                    "status": db_wallet.status,
+                    "created_at": db_wallet.created_at
+                }
             }
         else:
             raise HTTPException(
