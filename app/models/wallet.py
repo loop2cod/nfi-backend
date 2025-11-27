@@ -16,6 +16,7 @@ class Wallet(Base):
     frozen_balance = Column(Float, default=0.0)
     network = Column(String, nullable=False)  # e.g., Ethereum, Bitcoin
     wallet_id = Column(String, nullable=False)  # Dfns wallet ID
+    status = Column(String, default="active")  # active, deleted
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

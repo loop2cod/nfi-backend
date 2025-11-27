@@ -274,9 +274,81 @@ def get_customer_detail(
         )
 
     # Get customer's wallets
-    wallets = db.query(Wallet).filter(Wallet.user_id == customer.id).all()
+    db_wallets = db.query(Wallet).filter(Wallet.user_id == customer.id).all()
 
-    # Create response with wallets
+    # Sync wallet status with DFNS
+    wallet_status = {"active": [], "deleted": []}
+    wallets_to_show = []
+
+    if db_wallets:
+        from app.core.dfns_client import dfns_client
+        if dfns_client:
+            # Convert db wallets to dict format for sync
+            db_wallets_dict = [
+                {
+                    "id": w.id,
+                    "wallet_id": w.wallet_id,
+                    "currency": w.currency,
+                    "network": w.network,
+                    "address": w.address
+                }
+                for w in db_wallets
+            ]
+
+            # Sync with DFNS
+            wallet_status = dfns_client.sync_wallet_status(customer.id, db_wallets_dict)
+
+            # Mark deleted wallets in database
+            for wallet in db_wallets:
+                if wallet.wallet_id in wallet_status["deleted"]:
+                    # Update wallet status in database
+                    db.query(Wallet).filter(Wallet.id == wallet.id).update({"status": "deleted"})
+            db.commit()
+
+            # Prepare wallets for response with status
+            for wallet in db_wallets:
+                wallet_dict = {
+                    "id": wallet.id,
+                    "currency": wallet.currency,
+                    "address": wallet.address,
+                    "balance": wallet.balance,
+                    "available_balance": wallet.available_balance,
+                    "frozen_balance": wallet.frozen_balance,
+                    "network": wallet.network,
+                    "wallet_id": wallet.wallet_id,
+                    "status": "active" if wallet.wallet_id in wallet_status["active"] else "deleted"
+                }
+                wallets_to_show.append(wallet_dict)
+        else:
+            # DFNS not available, show all wallets as active
+            wallets_to_show = [
+                {
+                    "id": w.id,
+                    "currency": w.currency,
+                    "address": w.address,
+                    "balance": w.balance,
+                    "available_balance": w.available_balance,
+                    "frozen_balance": w.frozen_balance,
+                    "network": w.network,
+                    "wallet_id": w.wallet_id,
+                    "status": "active"
+                }
+                for w in db_wallets
+            ]
+
+    # Get available wallet types that can be created
+    from app.core.wallet_config import get_wallets_to_create
+    available_wallet_types = get_wallets_to_create()
+
+    # Check which wallets are missing
+    existing_currencies = {w["currency"] for w in wallets_to_show if w["status"] == "active"}
+    missing_wallets = [
+        {"currency": config["currency"], "network": config["network"]}
+        for config in available_wallet_types
+        if config["currency"] not in existing_currencies
+    ]
+
+    # Create response with wallets and creation options
     customer_dict = {
         "id": customer.id,
         "user_id": customer.user_id,
@@ -293,7 +365,9 @@ def get_customer_detail(
         "verification_error_message": customer.verification_error_message,
         "bvnk_customer_id": customer.bvnk_customer_id,
         "bvnk_customer_created_at": customer.bvnk_customer_created_at,
-        "wallets": wallets,
+        "wallets": wallets_to_show,
+        "missing_wallets": missing_wallets,
+        "wallet_sync_status": wallet_status,
         "created_at": customer.created_at,
         "updated_at": customer.updated_at,
     }
@@ -669,6 +743,171 @@ def create_customer_wallets(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Customer with user_id {user_id} not found"
+        )
+
+    # Check if customer is verified
+    if not customer.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Customer must be verified before creating wallets"
+        )
+
+    # Check if wallets already exist
+    existing_wallets = db.query(Wallet).filter(Wallet.user_id == customer.id).all()
+    if existing_wallets:
+        return {
+            "success": False,
+            "message": f"Customer already has {len(existing_wallets)} wallets",
+            "wallets": [
+                {
+                    "id": wallet.id,
+                    "currency": wallet.currency,
+                    "address": wallet.address,
+                    "network": wallet.network,
+                    "wallet_id": wallet.wallet_id
+                }
+                for wallet in existing_wallets
+            ]
+        }
+
+    try:
+        logger.info(f"Admin {current_admin.username} creating wallets for user {user_id}")
+
+        # Create wallets using the batch function
+        created_wallets = create_user_wallets_batch(customer.id)
+
+        if created_wallets:
+            # Save wallet data to database
+            for wallet_data in created_wallets:
+                db_wallet = Wallet(**wallet_data)
+                db.add(db_wallet)
+
+            db.commit()
+            logger.info(f"Successfully created {len(created_wallets)} wallets for user {user_id}")
+
+            # Create audit log entry for wallet creation
+            audit_log = VerificationAuditLog(
+                user_id=customer.id,
+                admin_id=current_admin.id,
+                action_type="wallets_created",
+                comment=f"Admin {current_admin.username} manually created {len(created_wallets)} wallets"
+            )
+            db.add(audit_log)
+            db.commit()
+
+            return {
+                "success": True,
+                "message": f"Successfully created {len(created_wallets)} wallets",
+                "wallets": created_wallets
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create wallets"
+            )
+
+    except Exception as e:
+        logger.error(f"Error creating wallets for user {user_id}: {e}", exc_info=True)
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create wallets: {str(e)}"
+        )
+
+
+@router.post("/customers/{user_id}/create-wallet")
+def create_specific_wallet(
+    user_id: str,
+    wallet_request: dict,
+    current_admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a specific wallet for a customer.
+    Body: {"currency": "BTC", "network": "Bitcoin"}
+    """
+    from app.core.dfns_client import create_user_wallet
+    import logging
+    logger = logging.getLogger(__name__)
+
+    customer = db.query(User).filter(User.user_id == user_id).first()
+
+    if not customer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Customer with user_id {user_id} not found"
+        )
+
+    currency = wallet_request.get("currency")
+    network = wallet_request.get("network")
+
+    if not currency or not network:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="currency and network are required"
+        )
+
+    # Check if wallet already exists
+    existing_wallet = db.query(Wallet).filter(
+        Wallet.user_id == customer.id,
+        Wallet.currency == currency,
+        Wallet.network == network
+    ).first()
+
+    if existing_wallet:
+        return {
+            "success": False,
+            "message": f"Wallet {currency} on {network} already exists",
+            "wallet": {
+                "id": existing_wallet.id,
+                "currency": existing_wallet.currency,
+                "address": existing_wallet.address,
+                "network": existing_wallet.network,
+                "wallet_id": existing_wallet.wallet_id
+            }
+        }
+
+    try:
+        logger.info(f"Admin {current_admin.username} creating {currency} wallet on {network} for user {user_id}")
+
+        # Create the specific wallet
+        wallet_data = create_user_wallet(customer.id, currency, network)
+
+        if wallet_data:
+            # Save to database
+            db_wallet = Wallet(**wallet_data)
+            db.add(db_wallet)
+            db.commit()
+
+            logger.info(f"Successfully created {currency} wallet for user {user_id}")
+
+            # Create audit log
+            audit_log = VerificationAuditLog(
+                user_id=customer.id,
+                admin_id=current_admin.id,
+                action_type="wallet_created",
+                comment=f"Admin {current_admin.username} created {currency} wallet on {network}"
+            )
+            db.add(audit_log)
+            db.commit()
+
+            return {
+                "success": True,
+                "message": f"Successfully created {currency} wallet on {network}",
+                "wallet": wallet_data
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to create {currency} wallet on {network}"
+            )
+
+    except Exception as e:
+        logger.error(f"Error creating {currency} wallet for user {user_id}: {e}", exc_info=True)
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create wallet: {str(e)}"
         )
 
     # Check if customer is verified

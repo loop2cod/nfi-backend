@@ -210,6 +210,15 @@ def migrate_database(db_path="nfi.db"):
             cursor.execute("CREATE UNIQUE INDEX ix_customer_verification_data_user_id ON customer_verification_data (user_id)")
             print("✓ customer_verification_data table created")
 
+        # Check if status column exists in wallets table
+        cursor.execute("PRAGMA table_info(wallets)")
+        wallet_columns = [col[1] for col in cursor.fetchall()]
+
+        if 'status' not in wallet_columns:
+            print("Adding status column to wallets table...")
+            cursor.execute("ALTER TABLE wallets ADD COLUMN status VARCHAR(20) DEFAULT 'active'")
+            print("✓ status column added to wallets table")
+
         conn.commit()
         print("\n✅ Database migration completed successfully!")
 

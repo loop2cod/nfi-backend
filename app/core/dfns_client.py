@@ -72,11 +72,21 @@ class DfnsApiClient:
 
 
 
-    def create_wallet(self, network: str) -> Dict[str, Any]:
+    def create_wallet(self, network: str, user_id: int, dfns_user_id: Optional[str] = None) -> Dict[str, Any]:
         """Create a new wallet for the given network using proper DFNS signing flow"""
         # Step 1: Initialize user action challenge
         # The payload should describe the actual API call we want to make
-        wallet_payload = {"network": network}
+        wallet_payload = {
+            "network": network,
+            "name": f"user_{user_id}_{network}",
+            "externalId": f"user_{user_id}_{network}"
+        }
+
+        # Add delegateTo only if a valid DFNS user ID is provided
+        # Note: delegateTo requires the target to be an existing DFNS end user
+        if dfns_user_id:
+            wallet_payload["delegateTo"] = dfns_user_id
+
         wallet_payload_json = json.dumps(wallet_payload)
 
         init_payload = {
@@ -138,6 +148,76 @@ class DfnsApiClient:
         wallet_response.raise_for_status()
         return wallet_response.json()
 
+    def list_wallets(self, owner_id: Optional[str] = None, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """List wallets, optionally filtered by owner or user_id via externalId"""
+        params = {}
+        if owner_id:
+            params["owner"] = owner_id  # Use 'owner' instead of deprecated 'ownerId'
+
+        response = self.session.get(
+            f"{self.base_url}/wallets",
+            params=params,
+            headers={"Content-Type": "application/json"}
+        )
+        response.raise_for_status()
+        all_wallets = response.json().get("items", [])
+
+        # If user_id is provided, filter wallets by externalId pattern
+        if user_id:
+            filtered_wallets = []
+            for wallet in all_wallets:
+                external_id = wallet.get("externalId", "")
+                if external_id.startswith(f"user_{user_id}_"):
+                    filtered_wallets.append(wallet)
+            return filtered_wallets
+
+        return all_wallets
+
+    def get_wallet_by_id(self, wallet_id: str) -> Optional[Dict[str, Any]]:
+        """Get a specific wallet by ID from DFNS"""
+        response = self.session.get(
+            f"{self.base_url}/wallets/{wallet_id}",
+            headers={"Content-Type": "application/json"}
+        )
+        if response.status_code == 200:
+            return response.json()
+        elif response.status_code == 404:
+            return None  # Wallet not found
+        else:
+            response.raise_for_status()
+            return None
+
+    def sync_wallet_status(self, user_id: int, db_wallets: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+        """
+        Sync wallet status with DFNS API
+        Returns dict with 'active' and 'deleted' wallet IDs
+        """
+        active_wallets = []
+        deleted_wallets = []
+
+        # Get wallets from DFNS for this user
+        dfns_wallets = self.list_wallets(user_id=user_id)
+        dfns_wallet_ids = {wallet["id"] for wallet in dfns_wallets}
+
+        # Check each database wallet
+        for db_wallet in db_wallets:
+            wallet_id = db_wallet.get("wallet_id")
+            if wallet_id:
+                if wallet_id in dfns_wallet_ids:
+                    active_wallets.append(wallet_id)
+                else:
+                    # Double-check by trying to get the wallet directly
+                    wallet_details = self.get_wallet_by_id(wallet_id)
+                    if wallet_details:
+                        active_wallets.append(wallet_id)
+                    else:
+                        deleted_wallets.append(wallet_id)
+
+        return {
+            "active": active_wallets,
+            "deleted": deleted_wallets
+        }
+
 
 # Global client instance
 dfns_client: Optional[DfnsApiClient] = None
@@ -189,7 +269,7 @@ def create_user_wallet(user_id: int, currency: str, network: str) -> Optional[Di
         print(f"Creating {currency} wallet on {network} for user {user_id} via DFNS API")
 
         # Create wallet using DFNS API
-        wallet_response = dfns_client.create_wallet(network)
+        wallet_response = dfns_client.create_wallet(network, user_id)
 
         # Extract wallet information
         wallet_id = wallet_response.get("id")
