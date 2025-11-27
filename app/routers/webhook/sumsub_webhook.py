@@ -13,6 +13,7 @@ import logging
 from app.core.database import get_db
 from app.models.user import User
 from app.models.verification_event import VerificationEvent
+from app.models.customer_verification_data import CustomerVerificationData
 from app.core.config import settings
 
 # Set up logging
@@ -50,6 +51,23 @@ def get_user_by_external_id(db: Session, external_user_id: str) -> User | None:
     except Exception as e:
         logger.error(f"Error getting user by external ID {external_user_id}: {e}")
         return None
+
+
+def get_or_create_verification_data(db: Session, user_id: int) -> CustomerVerificationData:
+    """
+    Get or create customer verification data for a user
+    """
+    verification_data = db.query(CustomerVerificationData).filter(
+        CustomerVerificationData.user_id == user_id
+    ).first()
+
+    if not verification_data:
+        verification_data = CustomerVerificationData(user_id=user_id)
+        db.add(verification_data)
+        db.commit()
+        db.refresh(verification_data)
+
+    return verification_data
 
 
 def update_user_verification_status(
@@ -98,6 +116,19 @@ def update_user_verification_status(
                 user.verification_result = "GREEN"
                 user.verification_completed_at = datetime.now(timezone.utc)
                 logger.info(f"User {user.user_id} verified successfully")
+
+                # Automatically mark Step 2 (Sumsub verification) as complete
+                try:
+                    verification_data = get_or_create_verification_data(db, user.id)
+                    if not verification_data.step_2_completed:
+                        verification_data.step_2_completed = True
+                        verification_data.step_2_completed_at = datetime.now(timezone.utc)
+                        db.commit()
+                        logger.info(f"Automatically marked Step 2 complete for user {user.user_id}")
+                except Exception as e:
+                    logger.error(f"Error marking step 2 complete: {e}")
+                    # Don't fail the webhook if this fails
+
             elif review_answer == "RED":
                 user.is_verified = False
                 user.verification_result = "RED"
