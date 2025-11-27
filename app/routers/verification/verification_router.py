@@ -540,7 +540,40 @@ async def save_cdd_information(
 
         logger.info(f"Step 4 completed for user {current_user.user_id}")
 
-        # TODO: Trigger BVNK customer creation if all steps completed
+        # Auto-create BVNK agreement session when all steps are completed
+        if all_steps_completed:
+            try:
+                from app.core.bvnk_client import get_bvnk_client
+                bvnk_client = get_bvnk_client()
+
+                # Check if agreement session already exists
+                step_data = verification_data.step_data or {}
+                if not step_data.get("bvnk_agreement_reference"):
+                    logger.info(f"Creating BVNK agreement session for user {current_user.user_id}")
+
+                    agreement_response = bvnk_client.create_agreement_session(
+                        country_code=verification_data.country_code,
+                        customer_type="INDIVIDUAL",
+                        use_case="EMBEDDED_STABLECOIN_WALLETS"
+                    )
+
+                    agreement_reference = agreement_response.get("reference")
+                    if agreement_reference:
+                        step_data["bvnk_agreement_reference"] = agreement_reference
+                        step_data["bvnk_country_code"] = verification_data.country_code
+                        step_data["bvnk_customer_type"] = "INDIVIDUAL"
+                        step_data["bvnk_use_case"] = "EMBEDDED_STABLECOIN_WALLETS"
+                        verification_data.step_data = step_data
+                        db.commit()
+                        logger.info(f"BVNK agreement session created: {agreement_reference}")
+                else:
+                    logger.info(f"BVNK agreement session already exists: {step_data.get('bvnk_agreement_reference')}")
+
+            except Exception as e:
+                # Don't fail the CDD completion if agreement creation fails
+                # Admin can create it manually later
+                logger.error(f"Error creating BVNK agreement session: {e}", exc_info=True)
+
         next_step = None if all_steps_completed else 5
 
         return VerificationStepResponse(

@@ -286,6 +286,195 @@ class BVNKClient:
 
         return response.json()
 
+    def create_agreement_session(
+        self,
+        country_code: str,
+        customer_type: str,
+        use_case: str
+    ) -> Dict[str, Any]:
+        """
+        Create an agreement signing session for an Embedded Partner Customer
+
+        Args:
+            country_code: ISO country code (e.g., "US", "GB")
+            customer_type: "INDIVIDUAL" or "COMPANY"
+            use_case: Agreement use case - one of:
+                     "STABLECOIN_PAYOUTS"
+                     "EMBEDDED_STABLECOIN_WALLETS"
+                     "EMBEDDED_FIAT_ACCOUNTS"
+
+        Returns:
+            Agreement session data with 'reference' field needed for customer creation
+
+        Raises:
+            requests.HTTPError: If API request fails
+        """
+        url = f"{self.base_url}/platform/v1/customers/agreement/sessions"
+
+        payload = {
+            "countryCode": country_code,
+            "customerType": customer_type,
+            "useCase": use_case
+        }
+
+        headers = self._get_headers(url, "POST")
+
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+
+        return response.json()
+
+    def get_agreement_session(self, reference: str) -> Dict[str, Any]:
+        """
+        Get the status of an agreement session
+
+        Args:
+            reference: Agreement session reference
+
+        Returns:
+            Agreement session data including status
+
+        Raises:
+            requests.HTTPError: If API request fails
+        """
+        url = f"{self.base_url}/platform/v1/customers/agreement/sessions/{reference}"
+        headers = self._get_headers(url, "GET")
+
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+
+        return response.json()
+
+    def update_agreement_session(
+        self,
+        reference: str,
+        status: str,
+        ip_address: str
+    ) -> Dict[str, Any]:
+        """
+        Update agreement session status (for Direct API approach)
+
+        Args:
+            reference: Agreement session reference
+            status: New status - typically "SIGNED"
+            ip_address: IP address of the user signing the agreement
+
+        Returns:
+            Updated agreement session data
+
+        Raises:
+            requests.HTTPError: If API request fails
+        """
+        url = f"{self.base_url}/platform/v1/customers/agreement/sessions/{reference}"
+
+        payload = {
+            "status": status,
+            "ipAddress": ip_address
+        }
+
+        headers = self._get_headers(url, "PUT")
+
+        response = requests.put(url, json=payload, headers=headers)
+        response.raise_for_status()
+
+        return response.json()
+
+    def get_agreements(self) -> Dict[str, Any]:
+        """
+        Fetch all required agreement documents needed to onboard an Embedded Partner Merchant
+
+        Returns:
+            List of agreement documents
+
+        Raises:
+            requests.HTTPError: If API request fails
+        """
+        url = f"{self.base_url}/api/v1/agreement"
+        headers = self._get_headers(url, "GET")
+
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+
+        return response.json()
+
+    def create_customer_individual(
+        self,
+        first_name: str,
+        last_name: str,
+        date_of_birth: str,
+        birth_country_code: str,
+        document_number: str,
+        address_line1: str,
+        city: str,
+        post_code: str,
+        country_code: str,
+        signed_agreement_session_reference: Optional[str] = None,
+        email: Optional[str] = None,
+        risk_score: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Create an INDIVIDUAL customer in BVNK
+
+        Args:
+            first_name: Customer's first name
+            last_name: Customer's last name
+            date_of_birth: Date of birth in YYYY-MM-DD format
+            birth_country_code: ISO 3166-1 alpha-2 country code of birth
+            document_number: ID document number
+            address_line1: Street address
+            city: City name
+            post_code: Postal/ZIP code
+            country_code: ISO 3166-1 alpha-2 country code
+            signed_agreement_session_reference: Agreement session reference (optional)
+            email: Customer email (optional)
+            risk_score: Risk score - "LOW", "MEDIUM", "HIGH" (optional)
+
+        Returns:
+            Customer creation response with customer ID and status
+
+        Raises:
+            requests.HTTPError: If API request fails
+        """
+        url = f"{self.base_url}/platform/v1/customers"
+
+        payload = {
+            "type": "INDIVIDUAL",
+            "individual": {
+                "firstName": first_name,
+                "lastName": last_name,
+                "dateOfBirth": date_of_birth,
+                "birthCountryCode": birth_country_code,
+                "documentNumber": document_number,
+                "address": {
+                    "addressLine1": address_line1,
+                    "city": city,
+                    "postCode": post_code,
+                    "countryCode": country_code
+                }
+            }
+        }
+
+        # Add optional fields
+        if signed_agreement_session_reference:
+            payload["signedAgreementSessionReference"] = signed_agreement_session_reference
+
+        if email:
+            payload["individual"]["email"] = email
+
+        if risk_score:
+            payload["riskScore"] = risk_score
+
+        # Generate idempotency key
+        import uuid
+        idempotency_key = str(uuid.uuid4())
+
+        headers = self._get_headers(url, "POST", idempotency_key)
+
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+
+        return response.json()
+
 
 # Initialize client (can be used throughout the app)
 def get_bvnk_client() -> BVNKClient:

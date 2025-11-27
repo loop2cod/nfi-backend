@@ -14,6 +14,8 @@ from app.routers.wallets.wallets_router import router as wallets_router
 from app.routers.admin.admin_router import router as admin_router
 from app.routers.admin.admin_auth_router import router as admin_auth_router
 from app.routers.admin.admin_management_router import router as admin_management_router
+from app.routers.bvnk.bvnk_agreement_router import router as bvnk_agreement_router
+from app.routers.bvnk.bvnk_customer_router import router as bvnk_customer_router
 from app.core.dfns_client import init_dfns_client
 
 # Import models to ensure they are registered with SQLAlchemy
@@ -65,6 +67,8 @@ app.include_router(wallets_router, prefix="/wallets", tags=["wallets"])
 app.include_router(admin_auth_router, prefix="/admin/auth", tags=["admin-auth"])
 app.include_router(admin_management_router, prefix="/admin", tags=["admin-management"])
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
+app.include_router(bvnk_agreement_router, prefix="/bvnk", tags=["bvnk-agreements"])
+app.include_router(bvnk_customer_router, prefix="/bvnk", tags=["bvnk-customers"])
 
 @app.get("/")
 def read_root():

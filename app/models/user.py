@@ -32,6 +32,7 @@ class User(Base):
     bvnk_customer_id = Column(String, nullable=True, unique=True, index=True)  # BVNK customer UUID
     bvnk_customer_created_at = Column(DateTime(timezone=True), nullable=True)
     bvnk_customer_status = Column(String, nullable=True)  # ACTIVE, SUSPENDED, CLOSED
+    bvnk_customer_error = Column(String, nullable=True)  # Error message if creation failed
 
     # Customer information (synced with BVNK)
     first_name = Column(String(100), nullable=True)
