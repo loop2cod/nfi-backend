@@ -122,11 +122,21 @@ async def create_bvnk_customer(
         agreement_reference = step_data.get("bvnk_agreement_reference")
 
         if not agreement_reference:
+            # Validate country code
+            country_code = verification_data.country_code
+            if not country_code or len(country_code) != 2:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid country code: {country_code}. Must be ISO 3166-1 alpha-2 format (e.g., 'US', 'GB')"
+                )
+
             # Create agreement session
             logger.info(f"Creating agreement session for user {user_id}")
+            logger.info(f"Agreement params - country_code: {country_code}, customer_type: INDIVIDUAL, use_case: EMBEDDED_STABLECOIN_WALLETS")
+
             try:
                 agreement_response = bvnk_client.create_agreement_session(
-                    country_code=verification_data.country_code,
+                    country_code=country_code.upper(),  # Ensure uppercase
                     customer_type="INDIVIDUAL",
                     use_case="EMBEDDED_STABLECOIN_WALLETS"
                 )
@@ -134,7 +144,7 @@ async def create_bvnk_customer(
 
                 # Store reference in verification data
                 step_data["bvnk_agreement_reference"] = agreement_reference
-                step_data["bvnk_country_code"] = verification_data.country_code
+                step_data["bvnk_country_code"] = country_code
                 step_data["bvnk_customer_type"] = "INDIVIDUAL"
                 step_data["bvnk_use_case"] = "EMBEDDED_STABLECOIN_WALLETS"
                 verification_data.step_data = step_data
@@ -143,9 +153,19 @@ async def create_bvnk_customer(
                 logger.info(f"Agreement session created for user {user_id}: {agreement_reference}")
             except Exception as e:
                 logger.error(f"Error creating agreement session: {e}")
+                # Try to extract error details from BVNK response
+                error_detail = str(e)
+                if hasattr(e, 'response') and hasattr(e.response, 'text'):
+                    logger.error(f"BVNK API response: {e.response.text}")
+                    error_detail = f"{str(e)} - Response: {e.response.text}"
+
+                    # Provide helpful error message for unsupported countries
+                    if "country" in e.response.text.lower() or "400" in str(e):
+                        error_detail = f"Country '{country_code}' may not be supported for BVNK embedded wallets. Please check BVNK documentation for supported countries. Error: {e.response.text}"
+
                 raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to create agreement session: {str(e)}"
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Failed to create agreement session: {error_detail}"
                 )
 
         # Note: We're assuming the agreement is auto-signed in sandbox/for admin creation

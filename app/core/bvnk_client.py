@@ -320,6 +320,17 @@ class BVNKClient:
         headers = self._get_headers(url, "POST")
 
         response = requests.post(url, json=payload, headers=headers)
+
+        # Log request and response for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"BVNK Agreement Session Request - URL: {url}")
+        logger.info(f"BVNK Agreement Session Request - Payload: {payload}")
+        logger.info(f"BVNK Agreement Session Response - Status: {response.status_code}")
+
+        if response.status_code != 200:
+            logger.error(f"BVNK Agreement Session Response - Body: {response.text}")
+
         response.raise_for_status()
 
         return response.json()
