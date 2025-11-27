@@ -5,8 +5,9 @@ import hmac
 import hashlib
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from app.core.config import settings
+from app.core.wallet_config import get_wallets_to_create, get_contract_address, CURRENCIES
 
 
 class DfnsSigner:
@@ -119,7 +120,17 @@ def init_dfns_client():
 
 
 def create_user_wallet(user_id: int, currency: str, network: str) -> Optional[Dict[str, Any]]:
-    """Create a wallet for a user"""
+    """
+    Create a wallet for a user on a specific network
+
+    Args:
+        user_id: User ID
+        currency: Currency symbol (e.g., "USDT", "BTC")
+        network: Network name (e.g., "Ethereum", "ArbitrumOne")
+
+    Returns:
+        Wallet data dictionary or None if creation fails
+    """
     if dfns_client:
         try:
             wallet_data = dfns_client.create_wallet(network)
@@ -134,12 +145,19 @@ def create_user_wallet(user_id: int, currency: str, network: str) -> Optional[Di
                 "frozen_balance": 0.0
             }
         except Exception as e:
-            print(f"Failed to create wallet for {currency}: {e}")
+            print(f"Failed to create {currency} wallet on {network} for user {user_id}: {e}")
             return None
     else:
         # Mock wallet creation for development
         import uuid
-        mock_address = f"0x{uuid.uuid4().hex[:40]}"
+        # Generate network-appropriate mock address
+        if "Bitcoin" in network:
+            mock_address = f"bc1q{uuid.uuid4().hex[:40]}"
+        elif "Solana" in network:
+            mock_address = f"{uuid.uuid4().hex[:32]}"
+        else:  # EVM chains
+            mock_address = f"0x{uuid.uuid4().hex[:40]}"
+
         return {
             "user_id": user_id,
             "currency": currency,
@@ -150,3 +168,35 @@ def create_user_wallet(user_id: int, currency: str, network: str) -> Optional[Di
             "available_balance": 0.0,
             "frozen_balance": 0.0
         }
+
+
+def create_user_wallets_batch(user_id: int) -> List[Dict[str, Any]]:
+    """
+    Create all default wallets for a user based on configuration
+
+    Args:
+        user_id: User ID
+
+    Returns:
+        List of created wallet data dictionaries
+    """
+    wallets_to_create = get_wallets_to_create()
+    created_wallets = []
+    errors = []
+
+    for wallet_spec in wallets_to_create:
+        currency = wallet_spec["currency"]
+        network = wallet_spec["network"]
+
+        print(f"Creating {currency} wallet on {network} for user {user_id}")
+        wallet_data = create_user_wallet(user_id, currency, network)
+
+        if wallet_data:
+            created_wallets.append(wallet_data)
+        else:
+            errors.append(f"Failed to create {currency} wallet on {network}")
+
+    if errors:
+        print(f"Wallet creation errors: {', '.join(errors)}")
+
+    return created_wallets

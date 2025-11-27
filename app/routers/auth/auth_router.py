@@ -10,7 +10,7 @@ from app.auth.auth import authenticate_user, create_access_token, create_refresh
 from app.auth.google_auth import get_google_oauth_client, get_google_user_info
 from app.auth.sumsub_service import generate_websdk_config
 from app.core.config import settings
-from app.core.dfns_client import init_dfns_client, create_user_wallet
+from app.core.dfns_client import init_dfns_client
 from app.core.user_id_generator import generate_user_id
 from app.models.wallet import Wallet
 from app.utils.login_tracker import extract_login_info
@@ -169,21 +169,8 @@ async def login(request: LoginRequest, http_request: Request, db: Session = Depe
     access_token = create_access_token(data={"sub": user.email})
     refresh_token = create_refresh_token(data={"sub": user.email})
 
-    # Check if user has wallets, if not create them on first login
-    if not user.wallets:
-        init_dfns_client()
-        currencies_networks = [
-            ("USDT", "EthereumSepolia"),
-            ("USDC", "EthereumSepolia"),
-            ("ETH", "EthereumSepolia"),
-            ("BTC", "BitcoinTestnet")
-        ]
-        for currency, network in currencies_networks:
-            wallet_data = create_user_wallet(user.id, currency, network)
-            if wallet_data:
-                db_wallet = Wallet(**wallet_data)
-                db.add(db_wallet)
-        db.commit()
+    # Note: Wallets are now created automatically after verification completion
+    # No longer creating wallets on login
 
     # Track successful login
     login_activity = LoginActivity(
