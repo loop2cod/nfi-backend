@@ -205,6 +205,85 @@ class UpdateVerificationStatusRequest(BaseModel):
     step_name: Optional[str] = None
 
 
+@router.get("/customers", response_model=CustomerListResponse)
+def get_customers(
+    page: int = Query(0, ge=0, description="Page number (0-based)"),
+    size: int = Query(20, ge=1, le=100, description="Page size"),
+    search: Optional[str] = Query(None, description="Search by user_id or email"),
+    verification_status: Optional[str] = Query(None, description="Filter by verification status"),
+    is_verified: Optional[bool] = Query(None, description="Filter by verification status"),
+    has_bvnk_customer: Optional[bool] = Query(None, description="Filter by BVNK customer existence"),
+    current_admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Get paginated list of customers with optional filters.
+
+    Supports filtering by:
+    - search: user_id or email
+    - verification_status: pending, completed, action_required, failed
+    - is_verified: true/false
+    - has_bvnk_customer: true/false
+    """
+    # Build base query
+    query = db.query(User)
+
+    # Apply filters
+    if search:
+        query = query.filter(
+            or_(
+                User.user_id.ilike(f"%{search}%"),
+                User.email.ilike(f"%{search}%")
+            )
+        )
+
+    if verification_status:
+        query = query.filter(User.verification_status == verification_status)
+
+    if is_verified is not None:
+        query = query.filter(User.is_verified == is_verified)
+
+    if has_bvnk_customer is not None:
+        if has_bvnk_customer:
+            query = query.filter(User.bvnk_customer_id.isnot(None))
+        else:
+            query = query.filter(User.bvnk_customer_id.is_(None))
+
+    # Get total count
+    total = query.count()
+
+    # Apply pagination
+    customers = query.offset(page * size).limit(size).all()
+
+    # Calculate total pages
+    total_pages = (total + size - 1) // size  # Ceiling division
+
+    # Convert to response model
+    customer_items = []
+    for customer in customers:
+        customer_dict = {
+            "id": customer.id,  # type: ignore
+            "user_id": customer.user_id,  # type: ignore
+            "email": customer.email,  # type: ignore
+            "is_active": customer.is_active,  # type: ignore
+            "is_verified": customer.is_verified,  # type: ignore
+            "verification_status": customer.verification_status,  # type: ignore
+            "verification_result": customer.verification_result,  # type: ignore
+            "bvnk_customer_id": customer.bvnk_customer_id,  # type: ignore
+            "bvnk_customer_created_at": customer.bvnk_customer_created_at,  # type: ignore
+            "created_at": customer.created_at  # type: ignore
+        }
+        customer_items.append(CustomerListItem(**customer_dict))
+
+    return CustomerListResponse(
+        customers=customer_items,
+        total=total,
+        page=page,
+        size=size,
+        total_pages=total_pages
+    )
+
+
 @router.post("/customers/{user_id}/update-verification-status")
 def update_customer_verification_status(
     user_id: str,
