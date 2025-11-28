@@ -24,6 +24,7 @@ from app.models.verification_event import VerificationEvent
 from app.models.verification_audit_log import VerificationAuditLog
 from app.models.wallet import Wallet
 from app.core.dfns_client import create_user_wallets_batch
+from app.auth.sumsub_service import check_user_status
 from app.schemas.verification_schemas import (
     PersonalInformationSchema,
     TaxInformationSchema,
@@ -326,21 +327,44 @@ async def mark_sumsub_completed(
     try:
         logger.info(f"Step 2: Marking Sumsub complete for user {current_user.user_id}")
 
-        # Check if user has completed Sumsub verification
-        if current_user.verification_status != "completed" or current_user.verification_result != "GREEN":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Sumsub verification not completed or not approved"
-            )
-
         # Get verification data
         verification_data = get_or_create_verification_data(db, current_user.id)
+
+        # Check if step 2 is already completed (by webhook)
+        if verification_data.step_2_completed:
+            logger.info(f"Step 2 already completed for user {current_user.user_id}")
+            return VerificationStepResponse(
+                success=True,
+                message="Sumsub verification already completed",
+                step_number=2,
+                step_completed=True,
+                next_step=3,
+                all_steps_completed=False
+            )
 
         # Check if step 1 is completed
         if not verification_data.step_1_completed:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Please complete Step 1 (Personal Information) first"
+            )
+
+        # Check verification status directly with Sumsub
+        try:
+            sumsub_data = check_user_status(f"user_{current_user.user_id}")
+            review_result = sumsub_data.get("reviewResult", {})
+            review_answer = review_result.get("reviewAnswer") if review_result else None
+
+            if review_answer != "GREEN":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Sumsub verification not completed or not approved"
+                )
+        except Exception as e:
+            logger.error(f"Error checking Sumsub status for user {current_user.user_id}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to verify status with Sumsub"
             )
 
         # Mark step 2 as completed
