@@ -343,12 +343,16 @@ def get_customer_detail(
     from app.core.wallet_config import get_wallets_to_create
     available_wallet_types = get_wallets_to_create()
 
-    # Check which wallets are missing
-    existing_currencies = {w["currency"] for w in wallets_to_show if w["status"] == "active"}
+    # Check which wallets are missing (check by currency+network combination)
+    existing_wallet_pairs = {
+        (w["currency"], w["network"]) 
+        for w in wallets_to_show 
+        if w["status"] == "active"
+    }
     missing_wallets = [
         {"currency": config["currency"], "network": config["network"]}
         for config in available_wallet_types
-        if config["currency"] not in existing_currencies
+        if (config["currency"], config["network"]) not in existing_wallet_pairs
     ]
 
     # Create response with wallets and creation options

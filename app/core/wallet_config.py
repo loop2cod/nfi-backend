@@ -54,6 +54,15 @@ NETWORKS = {
         min_confirmations=200
     ),
 
+    # Tron
+    "Tron": NetworkConfig(
+        network_name="Tron",
+        display_name="Tron",
+        native_currency="TRX",
+        testnet_name="TronNile",
+        min_confirmations=19
+    ),
+
     # Layer 2s
     "ArbitrumOne": NetworkConfig(
         network_name="ArbitrumOne",
@@ -110,13 +119,14 @@ CURRENCIES = {
     "USDT": CurrencyConfig(
         symbol="USDT",
         name="Tether USD",
-        networks=["Ethereum", "ArbitrumOne", "Optimism", "Base", "Solana"],
+        networks=["Ethereum", "ArbitrumOne", "Optimism", "Base", "Solana", "Tron"],
         contract_addresses={
             "Ethereum": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
             "ArbitrumOne": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
             "Optimism": "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
             "Base": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",  # Base USDT contract
             "Solana": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT SPL token
+            "Tron": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",  # USDT TRC20
         },
         decimals=6
     ),
@@ -153,10 +163,13 @@ DEFAULT_WALLETS = [
     {"currency": "USDT", "network": "Solana"},
     {"currency": "USDC", "network": "Solana"},
 
-    # Layer 2s (Arbitrum, Optimism, Base) mainly USDT
+    # Layer 2s - USDT on ArbitrumOne, Optimism, Base
     {"currency": "USDT", "network": "ArbitrumOne"},
     {"currency": "USDT", "network": "Optimism"},
     {"currency": "USDT", "network": "Base"},
+    
+    # Tron - USDT
+    {"currency": "USDT", "network": "Tron"},
 ]
 
 
