@@ -196,64 +196,140 @@ class AuditLogListResponse(BaseModel):
     total_pages: int
 
 
-@router.get("/customers", response_model=CustomerListResponse)
-def list_customers(
-    page: int = Query(0, ge=0, description="Page number (starts from 0)"),
-    size: int = Query(20, ge=1, le=100, description="Number of records per page"),
-    search: Optional[str] = Query(None, description="Search by email or user ID"),
-    verification_status: Optional[str] = Query(None, description="Filter by verification status"),
-    is_verified: Optional[bool] = Query(None, description="Filter by verified status"),
-    has_bvnk_customer: Optional[bool] = Query(None, description="Filter by BVNK customer status"),
+class UpdateVerificationStatusRequest(BaseModel):
+    """Request model for updating verification status"""
+    verification_status: str
+    verification_result: Optional[str] = None
+    verification_error_message: Optional[str] = None
+    step_number: Optional[int] = None
+    step_name: Optional[str] = None
+
+
+@router.post("/customers/{user_id}/update-verification-status")
+def update_customer_verification_status(
+    user_id: str,
+    request: UpdateVerificationStatusRequest,
     current_admin: AdminUser = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     """
-    List all customers with pagination and filtering.
-    Accessible by authenticated admin users.
-    """
-    # Build query
-    query = db.query(User)
+    Update customer verification status (admin only).
 
-    # Apply search filter
-    if search:
-        query = query.filter(
-            or_(
-                User.email.ilike(f"%{search}%"),
-                User.user_id.ilike(f"%{search}%")
-            )
+    Allowed statuses:
+    - "completed" with result "GREEN" → Mark as verified
+    - "completed" with result "RED" → Mark as rejected
+    - "action_required" → Request additional information (optionally specify step)
+
+    Parameters:
+    - step_number: Optional 1-4 to indicate which step needs action
+    - step_name: Optional human-readable step name
+    """
+    from datetime import datetime, timezone
+
+    customer = db.query(User).filter(User.user_id == user_id).first()
+
+    if not customer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Customer with user_id {user_id} not found"
         )
 
-    # Apply verification status filter
-    if verification_status:
-        query = query.filter(User.verification_status == verification_status)
+    # Store old values for audit log
+    old_status = customer.verification_status
+    old_result = customer.verification_result
 
-    # Apply verified filter
-    if is_verified is not None:
-        query = query.filter(User.is_verified == is_verified)
+    # Extract parameters from request
+    verification_status = request.verification_status
+    verification_result = request.verification_result
+    verification_error_message = request.verification_error_message
+    step_number = request.step_number
+    step_name = request.step_name
 
-    # Apply BVNK customer filter
-    if has_bvnk_customer is not None:
-        if has_bvnk_customer:
-            query = query.filter(User.bvnk_customer_id.isnot(None))
+    # Validate status
+    valid_statuses = ["completed", "action_required", "pending", "failed"]
+    if verification_status not in valid_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid verification status. Must be one of: {', '.join(valid_statuses)}"
+        )
+
+    # Determine action type for audit log
+    action_type = "status_change"
+
+    # Update verification status
+    customer.verification_status = verification_status
+
+    if verification_status == "completed":
+        if verification_result == "GREEN":
+            customer.is_verified = True
+            customer.verification_result = "GREEN"
+            customer.verification_completed_at = datetime.now(timezone.utc)
+            customer.verification_error_message = None
+            message = f"Customer {user_id} marked as verified"
+            action_type = "approved"
+        elif verification_result == "RED":
+            customer.is_verified = False
+            customer.verification_result = "RED"
+            customer.verification_completed_at = datetime.now(timezone.utc)
+            customer.verification_error_message = verification_error_message or "Verification rejected by admin"
+            message = f"Customer {user_id} marked as rejected"
+            action_type = "rejected"
         else:
-            query = query.filter(User.bvnk_customer_id.is_(None))
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="verification_result must be 'GREEN' or 'RED' when status is 'completed'"
+            )
+    elif verification_status == "action_required":
+        customer.is_verified = False
+        customer.verification_result = None
+        customer.verification_error_message = verification_error_message or "Additional information required"
+        message = f"Customer {user_id} requires action"
+        action_type = "action_requested"
+    elif verification_status == "pending":
+        customer.is_verified = False
+        customer.verification_result = None
+        customer.verification_error_message = None
+        message = f"Customer {user_id} status set to pending"
+    else:  # failed
+        customer.is_verified = False
+        customer.verification_result = "RED"
+        customer.verification_error_message = verification_error_message or "Verification failed"
+        message = f"Customer {user_id} marked as failed"
 
-    # Get total count
-    total = query.count()
+    try:
+        db.commit()
+        db.refresh(customer)
 
-    # Calculate total pages
-    total_pages = (total + size - 1) // size if total > 0 else 0
+        # Create audit log entry
+        audit_log = VerificationAuditLog(
+            user_id=customer.id,
+            admin_id=current_admin.id,
+            action_type=action_type,
+            old_status=old_status,
+            new_status=verification_status,
+            old_result=old_result,
+            new_result=customer.verification_result,
+            step_number=step_number,
+            step_name=step_name,
+            admin_message=verification_error_message,
+            comment=message
+        )
+        db.add(audit_log)
+        db.commit()
 
-    # Apply pagination
-    customers = query.order_by(User.created_at.desc()).offset(page * size).limit(size).all()
-
-    return CustomerListResponse(
-        customers=customers,
-        total=total,
-        page=page,
-        size=size,
-        total_pages=total_pages
-    )
+        return {
+            "success": True,
+            "message": message,
+            "verification_status": customer.verification_status,
+            "is_verified": customer.is_verified,
+            "verification_result": customer.verification_result
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update verification status: {str(e)}"
+        )
 
 
 @router.get("/customers/{user_id}", response_model=CustomerDetailResponse)
@@ -488,130 +564,6 @@ def get_my_login_history(
     ).order_by(AdminLoginHistory.login_at.desc()).limit(limit).all()
 
     return login_history
-
-
-@router.post("/customers/{user_id}/update-verification-status")
-def update_customer_verification_status(
-    user_id: str,
-    verification_status: str,
-    verification_result: Optional[str] = None,
-    verification_error_message: Optional[str] = None,
-    step_number: Optional[int] = None,
-    step_name: Optional[str] = None,
-    current_admin: AdminUser = Depends(get_current_admin),
-    db: Session = Depends(get_db)
-):
-    """
-    Update customer verification status (admin only).
-
-    Allowed statuses:
-    - "completed" with result "GREEN" → Mark as verified
-    - "completed" with result "RED" → Mark as rejected
-    - "action_required" → Request additional information (optionally specify step)
-
-    Parameters:
-    - step_number: Optional 1-4 to indicate which step needs action
-    - step_name: Optional human-readable step name
-    """
-    from datetime import datetime, timezone
-
-    customer = db.query(User).filter(User.user_id == user_id).first()
-
-    if not customer:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Customer with user_id {user_id} not found"
-        )
-
-    # Store old values for audit log
-    old_status = customer.verification_status
-    old_result = customer.verification_result
-
-    # Validate status
-    valid_statuses = ["completed", "action_required", "pending", "failed"]
-    if verification_status not in valid_statuses:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid verification status. Must be one of: {', '.join(valid_statuses)}"
-        )
-
-    # Determine action type for audit log
-    action_type = "status_change"
-
-    # Update verification status
-    customer.verification_status = verification_status
-
-    if verification_status == "completed":
-        if verification_result == "GREEN":
-            customer.is_verified = True
-            customer.verification_result = "GREEN"
-            customer.verification_completed_at = datetime.now(timezone.utc)
-            customer.verification_error_message = None
-            message = f"Customer {user_id} marked as verified"
-            action_type = "approved"
-        elif verification_result == "RED":
-            customer.is_verified = False
-            customer.verification_result = "RED"
-            customer.verification_completed_at = datetime.now(timezone.utc)
-            customer.verification_error_message = verification_error_message or "Verification rejected by admin"
-            message = f"Customer {user_id} marked as rejected"
-            action_type = "rejected"
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="verification_result must be 'GREEN' or 'RED' when status is 'completed'"
-            )
-    elif verification_status == "action_required":
-        customer.is_verified = False
-        customer.verification_result = None
-        customer.verification_error_message = verification_error_message or "Additional information required"
-        message = f"Customer {user_id} requires action"
-        action_type = "action_requested"
-    elif verification_status == "pending":
-        customer.is_verified = False
-        customer.verification_result = None
-        customer.verification_error_message = None
-        message = f"Customer {user_id} status set to pending"
-    else:  # failed
-        customer.is_verified = False
-        customer.verification_result = "RED"
-        customer.verification_error_message = verification_error_message or "Verification failed"
-        message = f"Customer {user_id} marked as failed"
-
-    try:
-        db.commit()
-        db.refresh(customer)
-
-        # Create audit log entry
-        audit_log = VerificationAuditLog(
-            user_id=customer.id,
-            admin_id=current_admin.id,
-            action_type=action_type,
-            old_status=old_status,
-            new_status=verification_status,
-            old_result=old_result,
-            new_result=customer.verification_result,
-            step_number=step_number,
-            step_name=step_name,
-            admin_message=verification_error_message,
-            comment=message
-        )
-        db.add(audit_log)
-        db.commit()
-
-        return {
-            "success": True,
-            "message": message,
-            "verification_status": customer.verification_status,
-            "is_verified": customer.is_verified,
-            "verification_result": customer.verification_result
-        }
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update verification status: {str(e)}"
-        )
 
 
 @router.post("/customers/{user_id}/retry-bvnk")
