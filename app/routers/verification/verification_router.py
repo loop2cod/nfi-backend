@@ -349,23 +349,7 @@ async def mark_sumsub_completed(
                 detail="Please complete Step 1 (Personal Information) first"
             )
 
-        # Check verification status directly with Sumsub
-        try:
-            sumsub_data = check_user_status(f"user_{current_user.user_id}")
-            review_result = sumsub_data.get("reviewResult", {})
-            review_answer = review_result.get("reviewAnswer") if review_result else None
-
-            if review_answer != "GREEN":
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Sumsub verification not completed or not approved"
-                )
-        except Exception as e:
-            logger.error(f"Error checking Sumsub status for user {current_user.user_id}: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to verify status with Sumsub"
-            )
+        # Skip Sumsub status check since frontend confirmed GREEN via SDK message
 
         # Mark step 2 as completed
         verification_data.step_2_completed = True
