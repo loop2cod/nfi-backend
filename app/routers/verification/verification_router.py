@@ -584,40 +584,7 @@ async def save_cdd_information(
                 # Admin can create it manually later
                 logger.error(f"Error creating BVNK agreement session: {e}", exc_info=True)
 
-        # Create wallets for the user when verification is completed
-        if all_steps_completed:
-            try:
-                logger.info(f"Creating wallets for user {current_user.user_id} after verification completion")
-
-                # Create wallets using the batch function
-                created_wallets = create_user_wallets_batch(current_user.id)
-
-                if created_wallets:
-                    # Save wallet data to database
-                    for wallet_data in created_wallets:
-                        db_wallet = Wallet(**wallet_data)
-                        db.add(db_wallet)
-
-                    db.commit()
-                    logger.info(f"Successfully created {len(created_wallets)} wallets for user {current_user.user_id}")
-
-                    # Create audit log entry for wallet creation
-                    audit_log_wallet = VerificationAuditLog(
-                        user_id=current_user.id,
-                        admin_id=None,  # System action
-                        action_type="wallets_created",
-                        comment=f"System automatically created {len(created_wallets)} wallets after verification completion"
-                    )
-                    db.add(audit_log_wallet)
-                    db.commit()
-                else:
-                    logger.warning(f"No wallets were created for user {current_user.user_id}")
-
-            except Exception as e:
-                # Don't fail verification completion if wallet creation fails
-                # Admin can create wallets manually later
-                logger.error(f"Error creating wallets for user {current_user.user_id}: {e}", exc_info=True)
-                db.rollback()  # Rollback any partial wallet saves
+        # Wallets will be created manually by admin from dashboard
 
         next_step = None if all_steps_completed else 5
 
