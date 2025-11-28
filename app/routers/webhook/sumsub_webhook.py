@@ -129,6 +129,24 @@ def update_user_verification_status(
                     logger.error(f"Error marking step 2 complete: {e}")
                     # Don't fail the webhook if this fails
 
+                # Automatically create wallets for verified user
+                try:
+                    from app.core.dfns_client import create_user_wallets_batch
+                    from app.models.wallet import Wallet
+                    
+                    # Check if user already has wallets
+                    existing_wallets = db.query(Wallet).filter(Wallet.user_id == user.id).count()
+                    
+                    if existing_wallets == 0:
+                        logger.info(f"Creating wallets for newly verified user {user.user_id}")
+                        wallets_created = create_user_wallets_batch(user.id, db)
+                        logger.info(f"Successfully created {len(wallets_created)} wallets for user {user.user_id}")
+                    else:
+                        logger.info(f"User {user.user_id} already has {existing_wallets} wallets, skipping creation")
+                except Exception as e:
+                    logger.error(f"Error creating wallets for user {user.user_id}: {e}")
+                    # Don't fail the webhook if wallet creation fails
+
             elif review_answer == "RED":
                 user.is_verified = False
                 user.verification_result = "RED"

@@ -175,8 +175,26 @@ DEFAULT_WALLETS = [
 
 # Testnet wallet creation configuration (for development/testing)
 TESTNET_WALLETS = [
+    # Ethereum Sepolia (Testnet)
+    {"currency": "ETH", "network": "EthereumSepolia"},
     {"currency": "USDT", "network": "EthereumSepolia"},
     {"currency": "USDC", "network": "EthereumSepolia"},
+    
+    # Bitcoin Testnet
+    {"currency": "BTC", "network": "BitcoinTestnet3"},
+    
+    # Solana Devnet
+    {"currency": "SOL", "network": "SolanaDevnet"},
+    {"currency": "USDT", "network": "SolanaDevnet"},
+    {"currency": "USDC", "network": "SolanaDevnet"},
+    
+    # Layer 2 Testnets
+    {"currency": "USDT", "network": "ArbitrumSepolia"},
+    {"currency": "USDT", "network": "OptimismSepolia"},
+    {"currency": "USDT", "network": "BaseSepolia"},
+    
+    # Tron Testnet
+    {"currency": "USDT", "network": "TronNile"},
 ]
 
 

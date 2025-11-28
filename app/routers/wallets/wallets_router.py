@@ -23,7 +23,47 @@ def get_user_wallets(current_user: User = Depends(get_current_user), db: Session
             "available_balance": wallet.available_balance,
             "frozen_balance": wallet.frozen_balance,
             "network": wallet.network,
-            "wallet_id": wallet.wallet_id
+            "wallet_id": wallet.wallet_id,
+            "status": wallet.status
         }
         for wallet in wallets
     ]
+
+
+@router.post("/create-default-wallets")
+def create_default_wallets(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Create default wallets for the current user"""
+    from app.core.dfns_client import create_user_wallets_batch
+    
+    # Check if user is verified
+    if not current_user.is_verified:
+        raise HTTPException(
+            status_code=400,
+            detail="User must be verified before creating wallets"
+        )
+    
+    # Check if user already has wallets
+    existing_wallets = db.query(Wallet).filter(Wallet.user_id == current_user.id).count()
+    
+    if existing_wallets > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"User already has {existing_wallets} wallets"
+        )
+    
+    try:
+        wallets = create_user_wallets_batch(current_user.id, db)
+        return {
+            "success": True,
+            "message": f"Successfully created {len(wallets)} wallets",
+            "wallets": [
+                {
+                    "currency": w.currency,
+                    "network": w.network,
+                    "address": w.address
+                }
+                for w in wallets
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create wallets: {str(e)}")
