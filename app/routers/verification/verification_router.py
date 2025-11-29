@@ -584,7 +584,65 @@ async def save_cdd_information(
                 # Admin can create it manually later
                 logger.error(f"Error creating BVNK agreement session: {e}", exc_info=True)
 
-        # Wallets will be created manually by admin from dashboard
+            # Register end user with DFNS
+            try:
+                from app.core.dfns_client import dfns_client
+                if dfns_client and not current_user.dfns_user_id:
+                    logger.info(f"Registering end user with DFNS for user {current_user.user_id}")
+
+                    # Prepare user info for DFNS registration
+                    user_info = {
+                        "external_id": f"user_{current_user.id}",
+                        "email": current_user.email,
+                        "display_name": f"{current_user.first_name} {current_user.last_name}",
+                        "first_name": current_user.first_name,
+                        "last_name": current_user.last_name,
+                        "date_of_birth": current_user.date_of_birth,
+                        "nationality": current_user.nationality
+                    }
+
+                    # Create delegated registration challenge
+                    challenge_response = dfns_client.create_delegated_registration_challenge(user_info)
+                    challenge_identifier = challenge_response.get("challengeIdentifier")
+
+                    if challenge_identifier:
+                        # For now, we'll simulate the signed challenge (in production, this would come from frontend)
+                        # This is a placeholder - in real implementation, frontend would sign the challenge
+                        signed_challenge = {
+                            "kind": "Key",
+                            "credentialAssertion": {
+                                "credId": "placeholder",  # This would be the actual credential ID
+                                "clientData": "placeholder",  # This would be the actual client data
+                                "signature": "placeholder"  # This would be the actual signature
+                            }
+                        }
+
+                        # Complete end user registration
+                        registration_response = dfns_client.complete_end_user_registration(
+                            challenge_identifier,
+                            signed_challenge,
+                            user_info
+                        )
+
+                        dfns_user_id = registration_response.get("id")
+                        if dfns_user_id:
+                            current_user.dfns_user_id = dfns_user_id
+                            db.commit()
+                            logger.info(f"DFNS end user registered: {dfns_user_id}")
+                        else:
+                            logger.error("DFNS registration failed: no user ID returned")
+                    else:
+                        logger.error("DFNS challenge creation failed: no challenge identifier")
+                elif current_user.dfns_user_id:
+                    logger.info(f"DFNS end user already registered: {current_user.dfns_user_id}")
+                else:
+                    logger.warning("DFNS client not initialized, skipping end user registration")
+
+            except Exception as e:
+                # Don't fail verification if DFNS registration fails
+                logger.error(f"Error registering end user with DFNS: {e}", exc_info=True)
+
+        # Wallets can now be created using the registered DFNS end user ID
 
         next_step = None if all_steps_completed else 5
 

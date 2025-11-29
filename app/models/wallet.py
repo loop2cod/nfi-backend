@@ -9,6 +9,7 @@ class Wallet(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_nf_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
     currency = Column(String, nullable=False)  # USDT, USDC, ETH, BTC
     address = Column(String, nullable=False, unique=True)
     balance = Column(Float, default=0.0)

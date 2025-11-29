@@ -52,7 +52,7 @@ def create_default_wallets(current_user: User = Depends(get_current_user), db: S
         )
     
     try:
-        wallets = create_user_wallets_batch(current_user.id, db)
+        wallets = create_user_wallets_batch(current_user.id, current_user.dfns_user_id)
         return {
             "success": True,
             "message": f"Successfully created {len(wallets)} wallets",

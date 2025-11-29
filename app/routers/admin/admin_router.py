@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 from typing import Optional, List
 from datetime import datetime
+import logging
 
 from app.core.database import get_db
 from app.models.user import User
@@ -19,6 +20,9 @@ from app.models.wallet import Wallet
 from app.routers.admin.admin_auth_router import get_current_admin
 from app.core.dfns_client import create_user_wallets_batch
 from app.models.verification_audit_log import VerificationAuditLog
+
+# Set up logging
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel, EmailStr
 from decimal import Decimal
 
@@ -768,51 +772,54 @@ def create_customer_wallets(
     db: Session = Depends(get_db)
 ):
     """
-    Manually create wallets for a customer.
-    Useful if automatic wallet creation failed during verification.
+
+    Create wallets for a specific customer
     """
-    from datetime import datetime, timezone
-    import logging
-    logger = logging.getLogger(__name__)
-
-    customer = db.query(User).filter(User.user_id == user_id).first()
-
-    if not customer:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Customer with user_id {user_id} not found"
-        )
-
-    # Check if customer is verified
-    if not customer.is_verified:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Customer must be verified before creating wallets"
-        )
-
-    # Check if wallets already exist
-    existing_wallets = db.query(Wallet).filter(Wallet.user_id == customer.id).all()
-    if existing_wallets:
-        return {
-            "success": False,
-            "message": f"Customer already has {len(existing_wallets)} wallets",
-            "wallets": [
-                {
-                    "id": wallet.id,
-                    "currency": wallet.currency,
-                    "address": wallet.address,
-                    "network": wallet.network,
-                    "wallet_id": wallet.wallet_id
-                }
-                for wallet in existing_wallets
-            ]
-        }
-
     try:
+        # Validate user_id format
+        if not user_id.startswith("NF-"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid user_id format. Must start with 'NF-'"
+            )
+
+        # Get customer from database
+        customer = db.query(User).filter(User.user_id == user_id).first()
+        if not customer:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Customer with user_id {user_id} not found"
+            )
+
+        # Check if customer is verified
+        if not customer.is_verified:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Customer must be verified before creating wallets"
+            )
+
+        # Check if wallets already exist
+        existing_wallets = db.query(Wallet).filter(Wallet.user_id == customer.id).all()
+        if existing_wallets:
+            return {
+                "success": False,
+                "message": f"Customer already has {len(existing_wallets)} wallets",
+                "wallets": [
+                    {
+                        "id": wallet.id,
+                        "currency": wallet.currency,
+                        "address": wallet.address,
+                        "network": wallet.network,
+                        "wallet_id": wallet.wallet_id
+                    }
+                    for wallet in existing_wallets
+                ]
+            }
+
         logger.info(f"Admin {current_admin.username} creating wallets for user {user_id}")
 
         # Create wallets using the batch function
-        created_wallets = create_user_wallets_batch(customer.id)
+        created_wallets = create_user_wallets_batch(customer.id, customer.dfns_user_id)
 
         if created_wallets:
             # Save wallet data to database
@@ -923,7 +930,7 @@ def create_specific_wallet(
         logger.info(f"Admin {current_admin.username} creating {currency} wallet on {network} for user {user_id}")
 
         # Create the specific wallet
-        wallet_data = create_user_wallet(customer.id, currency, network)
+        wallet_data = create_user_wallet(customer.id,customer.user_id, currency, network)
 
         if wallet_data:
             # Save to database
@@ -1002,7 +1009,7 @@ def create_specific_wallet(
         logger.info(f"Admin {current_admin.username} creating wallets for user {user_id}")
 
         # Create wallets using the batch function
-        created_wallets = create_user_wallets_batch(customer.id)
+        created_wallets = create_user_wallets_batch(customer.id, customer.dfns_user_id)
 
         if created_wallets:
             # Save wallet data to database

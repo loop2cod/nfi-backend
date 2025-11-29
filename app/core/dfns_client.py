@@ -72,14 +72,63 @@ class DfnsApiClient:
 
 
 
+    def create_delegated_registration_challenge(self, user_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a delegated registration challenge for end user registration"""
+        payload = {
+            "kind": "EndUser",
+            "externalId": user_info.get("external_id"),
+            "email": user_info.get("email"),
+            "displayName": user_info.get("display_name"),
+            "firstName": user_info.get("first_name"),
+            "lastName": user_info.get("last_name"),
+            "dateOfBirth": user_info.get("date_of_birth"),
+            "nationality": user_info.get("nationality")
+        }
+
+        response = self.session.post(
+            f"{self.base_url}/users/delegated-registration",
+            json=payload,
+            headers={"Content-Type": "application/json"}
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def complete_end_user_registration(self, challenge_identifier: str, signed_challenge: Dict[str, Any], user_info: Dict[str, Any], wallets: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """Complete end user registration with optional wallet creation"""
+        payload = {
+            "challengeIdentifier": challenge_identifier,
+            "firstFactor": signed_challenge,
+            "userInfo": {
+                "kind": "EndUser",
+                "externalId": user_info.get("external_id"),
+                "email": user_info.get("email"),
+                "displayName": user_info.get("display_name"),
+                "firstName": user_info.get("first_name"),
+                "lastName": user_info.get("last_name"),
+                "dateOfBirth": user_info.get("date_of_birth"),
+                "nationality": user_info.get("nationality")
+            }
+        }
+
+        if wallets:
+            payload["wallets"] = wallets
+
+        response = self.session.post(
+            f"{self.base_url}/users",
+            json=payload,
+            headers={"Content-Type": "application/json"}
+        )
+        response.raise_for_status()
+        return response.json()
+
     def create_wallet(self, network: str, user_id: int, dfns_user_id: Optional[str] = None) -> Dict[str, Any]:
         """Create a new wallet for the given network using proper DFNS signing flow"""
         # Step 1: Initialize user action challenge
         # The payload should describe the actual API call we want to make
         wallet_payload = {
             "network": network,
-            "name": f"user_{user_id}_{network}",
-            "externalId": f"user_{user_id}_{network}"
+            "name": f"{user_id}_{network}",
+            "externalId": f"{user_id}"
         }
 
         # Add delegateTo only if a valid DFNS user ID is provided
@@ -249,7 +298,7 @@ def init_dfns_client():
         dfns_client = None
 
 
-def create_user_wallet(user_id: int, currency: str, network: str) -> Optional[Dict[str, Any]]:
+def create_user_wallet(user_id: int, user_nf_id: int, currency: str, network: str, dfns_user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     Create a wallet for a user on a specific network
 
@@ -269,7 +318,7 @@ def create_user_wallet(user_id: int, currency: str, network: str) -> Optional[Di
         print(f"Creating {currency} wallet on {network} for user {user_id} via DFNS API")
 
         # Create wallet using DFNS API
-        wallet_response = dfns_client.create_wallet(network, user_id)
+        wallet_response = dfns_client.create_wallet(network, user_nf_id, dfns_user_id)
 
         # Extract wallet information
         wallet_id = wallet_response.get("id")
@@ -282,6 +331,7 @@ def create_user_wallet(user_id: int, currency: str, network: str) -> Optional[Di
 
         return {
             "user_id": user_id,
+            "user_nf_id": user_nf_id,
             "currency": currency,
             "address": address,
             "network": network_name,
