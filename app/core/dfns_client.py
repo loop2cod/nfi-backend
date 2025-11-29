@@ -75,18 +75,20 @@ class DfnsApiClient:
     def create_delegated_registration_challenge(self, user_info: Dict[str, Any]) -> Dict[str, Any]:
         """Create a delegated registration challenge for end user registration"""
         payload = {
-            "kind": "EndUser",
-            "externalId": user_info.get("external_id"),
-            "email": user_info.get("email"),
-            "displayName": user_info.get("display_name"),
-            "firstName": user_info.get("first_name"),
-            "lastName": user_info.get("last_name"),
-            "dateOfBirth": user_info.get("date_of_birth"),
-            "nationality": user_info.get("nationality")
+            "user": {
+                "kind": "EndUser",
+                "externalId": user_info.get("external_id"),
+                "email": user_info.get("email"),
+                "displayName": user_info.get("display_name"),
+                "firstName": user_info.get("first_name"),
+                "lastName": user_info.get("last_name"),
+                "dateOfBirth": user_info.get("date_of_birth"),
+                "nationality": user_info.get("nationality")
+            }
         }
 
         response = self.session.post(
-            f"{self.base_url}/users/delegated-registration",
+            f"{self.base_url}/auth/delegated-registration/init",
             json=payload,
             headers={"Content-Type": "application/json"}
         )
@@ -98,7 +100,7 @@ class DfnsApiClient:
         payload = {
             "challengeIdentifier": challenge_identifier,
             "firstFactor": signed_challenge,
-            "userInfo": {
+            "user": {
                 "kind": "EndUser",
                 "externalId": user_info.get("external_id"),
                 "email": user_info.get("email"),
@@ -114,7 +116,7 @@ class DfnsApiClient:
             payload["wallets"] = wallets
 
         response = self.session.post(
-            f"{self.base_url}/users",
+            f"{self.base_url}/auth/delegated-registration",
             json=payload,
             headers={"Content-Type": "application/json"}
         )
@@ -346,12 +348,13 @@ def create_user_wallet(user_id: int, user_nf_id: int, currency: str, network: st
         return None
 
 
-def create_user_wallets_batch(user_id: int) -> List[Dict[str, Any]]:
+def create_user_wallets_batch(user_id: int, dfns_user_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Create all default wallets for a user based on configuration
 
     Args:
         user_id: User ID
+        dfns_user_id: DFNS end user ID for delegation (optional)
 
     Returns:
         List of created wallet data dictionaries
@@ -365,7 +368,7 @@ def create_user_wallets_batch(user_id: int) -> List[Dict[str, Any]]:
         network = wallet_spec["network"]
 
         print(f"Creating {currency} wallet on {network} for user {user_id}")
-        wallet_data = create_user_wallet(user_id, currency, network)
+        wallet_data = create_user_wallet(user_id, user_id, currency, network, dfns_user_id)
 
         if wallet_data:
             created_wallets.append(wallet_data)
