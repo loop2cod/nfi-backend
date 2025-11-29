@@ -155,13 +155,9 @@ DEFAULT_WALLETS = [
 
     # Ethereum Mainnet
     {"currency": "ETH", "network": "Ethereum"},
-    {"currency": "USDT", "network": "Ethereum"},
-    {"currency": "USDC", "network": "Ethereum"},
 
     # Solana
     {"currency": "SOL", "network": "Solana"},
-    {"currency": "USDT", "network": "Solana"},
-    {"currency": "USDC", "network": "Solana"},
 
     # Layer 2s - USDT on ArbitrumOne, Optimism, Base
     {"currency": "USDT", "network": "ArbitrumOne"},
@@ -177,16 +173,12 @@ DEFAULT_WALLETS = [
 TESTNET_WALLETS = [
     # Ethereum Sepolia (Testnet)
     {"currency": "ETH", "network": "EthereumSepolia"},
-    {"currency": "USDT", "network": "EthereumSepolia"},
-    {"currency": "USDC", "network": "EthereumSepolia"},
     
     # Bitcoin Testnet
     {"currency": "BTC", "network": "BitcoinTestnet3"},
     
     # Solana Devnet
     {"currency": "SOL", "network": "SolanaDevnet"},
-    {"currency": "USDT", "network": "SolanaDevnet"},
-    {"currency": "USDC", "network": "SolanaDevnet"},
     
     # Layer 2 Testnets
     {"currency": "USDT", "network": "ArbitrumSepolia"},

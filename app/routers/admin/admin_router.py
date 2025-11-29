@@ -814,14 +814,32 @@ def create_customer_wallets(
                     }
                     for wallet in existing_wallets
                 ]
-            }
+             }
 
         logger.info(f"Admin {current_admin.username} creating wallets for user {user_id}")
 
+        # Prepare user info for DFNS registration if needed
+        user_info = None
+        if not customer.dfns_user_id and customer.first_name and customer.last_name and customer.email:
+            user_info = {
+                "external_id": f"user_{customer.id}",
+                "email": customer.email,
+                "display_name": f"{customer.first_name} {customer.last_name}",
+                "first_name": customer.first_name,
+                "last_name": customer.last_name,
+                "date_of_birth": customer.date_of_birth,
+                "nationality": customer.nationality
+            }
+
         # Create wallets using the batch function
-        created_wallets = create_user_wallets_batch(customer.id, customer.dfns_user_id)
+        created_wallets = create_user_wallets_batch(customer.id, customer.dfns_user_id, user_info)
 
         if created_wallets:
+            # Check if DFNS end user was registered during wallet creation
+            # The function returns created_wallets, but we need to check if dfns_user_id was set
+            # For now, we'll check the customer record again after wallet creation
+            db.refresh(customer)  # Refresh to get any updates
+
             # Save wallet data to database
             saved_wallets = []
             for wallet_data in created_wallets:
@@ -1008,8 +1026,21 @@ def create_specific_wallet(
     try:
         logger.info(f"Admin {current_admin.username} creating wallets for user {user_id}")
 
+        # Prepare user info for DFNS registration if needed
+        user_info = None
+        if not customer.dfns_user_id and customer.first_name and customer.last_name and customer.email:
+            user_info = {
+                "external_id": f"user_{customer.id}",
+                "email": customer.email,
+                "display_name": f"{customer.first_name} {customer.last_name}",
+                "first_name": customer.first_name,
+                "last_name": customer.last_name,
+                "date_of_birth": customer.date_of_birth,
+                "nationality": customer.nationality
+            }
+
         # Create wallets using the batch function
-        created_wallets = create_user_wallets_batch(customer.id, customer.dfns_user_id)
+        created_wallets = create_user_wallets_batch(customer.id, customer.dfns_user_id, user_info)
 
         if created_wallets:
             # Save wallet data to database
