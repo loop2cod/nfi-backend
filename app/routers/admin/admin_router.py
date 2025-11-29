@@ -350,68 +350,6 @@ def update_customer_verification_status(
             customer.verification_error_message = None
             message = f"Customer {user_id} marked as verified"
             action_type = "approved"
-
-            # Register user with DFNS when verification is approved
-            try:
-                from app.core.dfns_client import dfns_client
-                if dfns_client and not customer.dfns_user_id:
-                    logger.info(f"Registering verified customer {user_id} with DFNS")
-
-                    # Prepare user info for DFNS registration
-                    user_info = {
-                        "external_id": f"user_{customer.id}",
-                        "email": customer.email,
-                        "display_name": f"{customer.first_name} {customer.last_name}",
-                        "first_name": customer.first_name,
-                        "last_name": customer.last_name,
-                        "date_of_birth": customer.date_of_birth,
-                        "nationality": customer.nationality
-                    }
-
-                    # Create delegated registration challenge
-                    challenge_response = dfns_client.create_delegated_registration_challenge(user_info)
-                    challenge_identifier = challenge_response.get("challengeIdentifier") or challenge_response.get("challenge")
-
-                    if challenge_identifier:
-                        logger.info(f"DFNS challenge created for {user_id}: {challenge_identifier}")
-
-                        # For delegated registration, we need to sign the challenge
-                        # Since we're using delegated registration, we'll create a mock signature for now
-                        # In production, this would be signed by the frontend
-                        signed_challenge = {
-                            "kind": "Key",
-                            "credentialAssertion": {
-                                "credId": "delegated-registration",  # Special credential for delegated registration
-                                "clientData": "eyJ0eXAiOiJrZXkuZ2V0IiwiY2hhbGxlbmdlIjoiIiwiZXh0ZW5zaW9ucyI6e319",  # Mock client data
-                                "signature": "mock-signature-for-delegated-registration"  # Mock signature
-                            }
-                        }
-
-                        # Complete end user registration (without wallets for now)
-                        registration_response = dfns_client.complete_end_user_registration(
-                            challenge_identifier,
-                            signed_challenge,
-                            user_info
-                        )
-
-                        # Extract the DFNS user ID
-                        dfns_user_id = registration_response.get("user", {}).get("id")
-                        if dfns_user_id:
-                            customer.dfns_user_id = dfns_user_id
-                            logger.info(f"DFNS end user registered successfully for {user_id}: {dfns_user_id}")
-                        else:
-                            logger.warning(f"DFNS registration response missing user ID for {user_id}: {registration_response}")
-                    else:
-                        logger.warning(f"DFNS challenge creation failed for {user_id}")
-                elif customer.dfns_user_id:
-                    logger.info(f"Customer {user_id} already has DFNS user ID: {customer.dfns_user_id}")
-                else:
-                    logger.warning("DFNS client not initialized, skipping end user registration")
-            except Exception as e:
-                # Don't fail verification if DFNS registration fails
-                logger.error(f"Error during DFNS end user registration for {user_id}: {e}", exc_info=True)
-                logger.info("DFNS registration failed, but verification approval continues")
-
         elif verification_result == "RED":
             customer.is_verified = False
             customer.verification_result = "RED"
