@@ -52,20 +52,7 @@ def create_default_wallets(current_user: User = Depends(get_current_user), db: S
         )
     
     try:
-        # Prepare user info for DFNS registration if needed
-        user_info = None
-        if not current_user.dfns_user_id and current_user.first_name and current_user.last_name and current_user.email:
-            user_info = {
-                "external_id": f"user_{current_user.id}",
-                "email": current_user.email,
-                "display_name": f"{current_user.first_name} {current_user.last_name}",
-                "first_name": current_user.first_name,
-                "last_name": current_user.last_name,
-                "date_of_birth": current_user.date_of_birth,
-                "nationality": current_user.nationality
-            }
-
-        wallets = create_user_wallets_batch(current_user.id, current_user.dfns_user_id, user_info)
+        wallets = create_user_wallets_batch(current_user.id, current_user.dfns_user_id)
         return {
             "success": True,
             "message": f"Successfully created {len(wallets)} wallets",

@@ -348,158 +348,39 @@ def create_user_wallet(user_id: int, user_nf_id: int, currency: str, network: st
         return None
 
 
-def register_dfns_end_user_and_create_wallets(user_id: int, user_info: Dict[str, Any]) -> tuple[Optional[str], List[Dict[str, Any]]]:
-    """
-    Register DFNS end user and create wallets in one transaction
 
-    Args:
-        user_id: User ID
-        user_info: User information for DFNS registration
-
-    Returns:
-        Tuple of (dfns_user_id, created_wallets)
-    """
-    if not dfns_client:
-        print(f"DFNS client not initialized, cannot register user or create wallets for user {user_id}")
-        return None, []
-
-    try:
-        # Step 1: Create delegated registration challenge
-        print(f"Creating DFNS delegated registration challenge for user {user_id}")
-        challenge_response = dfns_client.create_delegated_registration_challenge(user_info)
-        challenge_identifier = challenge_response.get("challengeIdentifier") or challenge_response.get("challenge")
-
-        if not challenge_identifier:
-            print(f"Failed to get challenge identifier from DFNS response: {challenge_response}")
-            return None, []
-
-        print(f"DFNS challenge created: {challenge_identifier}")
-
-        # Step 2: For delegated registration, we need to sign the challenge
-        # Since we're using delegated registration, we'll create a mock signature for now
-        # In production, this would be signed by the frontend
-        signed_challenge = {
-            "kind": "Key",
-            "credentialAssertion": {
-                "credId": "delegated-registration",  # Special credential for delegated registration
-                "clientData": "eyJ0eXAiOiJrZXkuZ2V0IiwiY2hhbGxlbmdlIjoiIiwiZXh0ZW5zaW9ucyI6e319",  # Mock client data
-                "signature": "mock-signature-for-delegated-registration"  # Mock signature
-            }
-        }
-
-        # Step 3: Complete end user registration with wallet creation
-        wallets_to_create = get_wallets_to_create()
-        wallet_specs = []
-        for wallet_spec in wallets_to_create:
-            wallet_specs.append({
-                "network": wallet_spec["network"],
-                "name": f"{user_id}_{wallet_spec['network']}",
-                "externalId": f"user_{user_id}_{wallet_spec['network']}"
-            })
-
-        print(f"Completing DFNS end user registration with {len(wallet_specs)} wallets for user {user_id}")
-        registration_response = dfns_client.complete_end_user_registration(
-            challenge_identifier,
-            signed_challenge,
-            user_info,
-            wallets=wallet_specs
-        )
-
-        # Extract the DFNS user ID and wallet information
-        dfns_user_id = registration_response.get("user", {}).get("id")
-        created_wallets_data = registration_response.get("wallets", [])
-
-        if not dfns_user_id:
-            print(f"Failed to get DFNS user ID from registration response: {registration_response}")
-            return None, []
-
-        print(f"DFNS end user registered successfully: {dfns_user_id}")
-
-        # Convert DFNS wallet data to our format
-        created_wallets = []
-        for i, wallet_data in enumerate(created_wallets_data):
-            wallet_spec = wallets_to_create[i] if i < len(wallets_to_create) else {"currency": "UNKNOWN", "network": "UNKNOWN"}
-            created_wallets.append({
-                "user_id": user_id,
-                "user_nf_id": str(user_id),
-                "currency": wallet_spec["currency"],
-                "address": wallet_data.get("address", ""),
-                "network": wallet_data.get("network", ""),
-                "wallet_id": wallet_data.get("id", ""),
-                "balance": 0.0,
-                "available_balance": 0.0,
-                "frozen_balance": 0.0
-            })
-
-        print(f"Successfully created {len(created_wallets)} wallets for DFNS user {dfns_user_id}")
-        return dfns_user_id, created_wallets
-
-    except Exception as e:
-        print(f"Failed to register DFNS end user and create wallets for user {user_id}: {e}")
-        return None, []
-
-
-def create_user_wallets_batch(user_id: int, dfns_user_id: Optional[str] = None, user_info: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+def create_user_wallets_batch(user_id: int, dfns_user_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Create all default wallets for a user based on configuration
 
     Args:
         user_id: User ID
         dfns_user_id: DFNS end user ID for delegation (optional)
-        user_info: User information for DFNS registration if dfns_user_id is None
 
     Returns:
         List of created wallet data dictionaries
     """
-    # If we have a DFNS user ID, create wallets with delegation
-    if dfns_user_id:
-        wallets_to_create = get_wallets_to_create()
-        created_wallets = []
-        errors = []
+    wallets_to_create = get_wallets_to_create()
+    created_wallets = []
+    errors = []
 
-        for wallet_spec in wallets_to_create:
-            currency = wallet_spec["currency"]
-            network = wallet_spec["network"]
+    for wallet_spec in wallets_to_create:
+        currency = wallet_spec["currency"]
+        network = wallet_spec["network"]
 
+        if dfns_user_id:
             print(f"Creating {currency} wallet on {network} for user {user_id} with delegation to {dfns_user_id}")
             wallet_data = create_user_wallet(user_id, user_id, currency, network, dfns_user_id)
-
-            if wallet_data:
-                created_wallets.append(wallet_data)
-            else:
-                errors.append(f"Failed to create {currency} wallet on {network}")
-
-        if errors:
-            print(f"Wallet creation errors: {', '.join(errors)}")
-
-        return created_wallets
-
-    # If no DFNS user ID but we have user info, register end user and create wallets together
-    elif user_info:
-        print(f"No DFNS user ID provided, registering end user and creating wallets for user {user_id}")
-        dfns_user_id, created_wallets = register_dfns_end_user_and_create_wallets(user_id, user_info)
-        return created_wallets
-
-    # Fallback: create wallets without delegation
-    else:
-        print(f"No DFNS user ID or user info provided, creating wallets without delegation for user {user_id}")
-        wallets_to_create = get_wallets_to_create()
-        created_wallets = []
-        errors = []
-
-        for wallet_spec in wallets_to_create:
-            currency = wallet_spec["currency"]
-            network = wallet_spec["network"]
-
+        else:
             print(f"Creating {currency} wallet on {network} for user {user_id} (no delegation)")
             wallet_data = create_user_wallet(user_id, user_id, currency, network, None)
 
-            if wallet_data:
-                created_wallets.append(wallet_data)
-            else:
-                errors.append(f"Failed to create {currency} wallet on {network}")
+        if wallet_data:
+            created_wallets.append(wallet_data)
+        else:
+            errors.append(f"Failed to create {currency} wallet on {network}")
 
-        if errors:
-            print(f"Wallet creation errors: {', '.join(errors)}")
+    if errors:
+        print(f"Wallet creation errors: {', '.join(errors)}")
 
-        return created_wallets
+    return created_wallets

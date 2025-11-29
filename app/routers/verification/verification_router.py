@@ -588,45 +588,7 @@ async def save_cdd_information(
                 logger.error(f"Error creating BVNK agreement session: {e}", exc_info=True)
                 logger.info("BVNK agreement session creation skipped - may need Master Service Agreement signing")
 
-            # Register end user with DFNS (optional - wallets can be created later)
-            try:
-                from app.core.dfns_client import dfns_client
-                if dfns_client and not current_user.dfns_user_id:
-                    logger.info(f"Attempting to register end user with DFNS for user {current_user.user_id}")
-
-                    # Prepare user info for DFNS registration
-                    user_info = {
-                        "external_id": f"user_{current_user.id}",
-                        "email": current_user.email,
-                        "display_name": f"{current_user.first_name} {current_user.last_name}",
-                        "first_name": current_user.first_name,
-                        "last_name": current_user.last_name,
-                        "date_of_birth": current_user.date_of_birth,
-                        "nationality": current_user.nationality
-                    }
-
-                    # Create delegated registration challenge
-                    challenge_response = dfns_client.create_delegated_registration_challenge(user_info)
-
-                    # Extract challenge identifier (API response structure may vary)
-                    challenge_identifier = challenge_response.get("challengeIdentifier") or challenge_response.get("challenge")
-
-                    if challenge_identifier:
-                        logger.info(f"DFNS challenge created: {challenge_identifier}")
-                        # Note: In production, this challenge would be sent to frontend for signing
-                        # For now, we'll skip the registration and do it during wallet creation
-                        logger.info("DFNS end user registration deferred until wallet creation")
-                    else:
-                        logger.warning("DFNS challenge creation response missing challenge identifier")
-                elif current_user.dfns_user_id:
-                    logger.info(f"DFNS end user already registered: {current_user.dfns_user_id}")
-                else:
-                    logger.warning("DFNS client not initialized, skipping end user registration")
-
-            except Exception as e:
-                # Don't fail verification if DFNS registration fails
-                logger.error(f"Error during DFNS end user registration attempt: {e}", exc_info=True)
-                logger.info("DFNS registration will be attempted during wallet creation")
+            # DFNS end user registration will be handled during admin verification approval
 
         # Wallets can now be created using the registered DFNS end user ID
 
