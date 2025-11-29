@@ -148,6 +148,12 @@ def migrate_database(db_path="nfi.db"):
             cursor.execute("ALTER TABLE users ADD COLUMN state_code VARCHAR(10)")
             print("✓ state_code column added")
 
+        if 'dfns_user_id' not in columns:
+            print("Adding dfns_user_id column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN dfns_user_id VARCHAR")
+            cursor.execute("CREATE UNIQUE INDEX ix_users_dfns_user_id ON users (dfns_user_id)")
+            print("✓ dfns_user_id column added")
+
         # Check if customer_verification_data table exists
         cursor.execute("""
             SELECT name FROM sqlite_master
