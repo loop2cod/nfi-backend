@@ -220,10 +220,47 @@ def migrate_database(db_path="nfi.db"):
         cursor.execute("PRAGMA table_info(wallets)")
         wallet_columns = [col[1] for col in cursor.fetchall()]
 
-        if 'status' not in wallet_columns:
-            print("Adding status column to wallets table...")
-            cursor.execute("ALTER TABLE wallets ADD COLUMN status VARCHAR(20) DEFAULT 'active'")
-            print("✓ status column added to wallets table")
+        # Check if wallets table exists
+        cursor.execute("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name='wallets'
+        """)
+        if not cursor.fetchone():
+            print("Creating wallets table...")
+            cursor.execute("""
+                CREATE TABLE wallets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    user_nf_id VARCHAR NOT NULL,
+                    currency VARCHAR NOT NULL,
+                    address VARCHAR NOT NULL UNIQUE,
+                    balance REAL DEFAULT 0.0,
+                    available_balance REAL DEFAULT 0.0,
+                    frozen_balance REAL DEFAULT 0.0,
+                    network VARCHAR NOT NULL,
+                    wallet_id VARCHAR NOT NULL,
+                    status VARCHAR(20) DEFAULT 'active',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            """)
+            cursor.execute("CREATE INDEX ix_wallets_user_id ON wallets (user_id)")
+            cursor.execute("CREATE INDEX ix_wallets_currency ON wallets (currency)")
+            cursor.execute("CREATE INDEX ix_wallets_network ON wallets (network)")
+            cursor.execute("CREATE UNIQUE INDEX ix_wallets_address ON wallets (address)")
+            print("✓ wallets table created")
+        else:
+            # Check if user_nf_id column exists in wallets table
+            if 'user_nf_id' not in wallet_columns:
+                print("Adding user_nf_id column to wallets table...")
+                cursor.execute("ALTER TABLE wallets ADD COLUMN user_nf_id VARCHAR")
+                print("✓ user_nf_id column added to wallets table")
+
+            if 'status' not in wallet_columns:
+                print("Adding status column to wallets table...")
+                cursor.execute("ALTER TABLE wallets ADD COLUMN status VARCHAR(20) DEFAULT 'active'")
+                print("✓ status column added to wallets table")
 
         conn.commit()
         print("\n✅ Database migration completed successfully!")
