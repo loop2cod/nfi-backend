@@ -73,6 +73,8 @@ class Settings(BaseSettings):
         "http://localhost:3003",
         "http://localhost:3004",
         "http://localhost:3005"
+        "https://client.nfigate.com"
+        "https://dash.nfigate.com"
     ]
 
     @field_validator('SECRET_KEY')
