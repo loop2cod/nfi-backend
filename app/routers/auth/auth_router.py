@@ -555,7 +555,7 @@ async def verify_2fa_otp(request: Verify2FAOTPRequest, http_request: Request, db
 
         # Verify TOTP code
         totp = pyotp.TOTP(user.totp_secret)
-        is_valid = totp.verify(request.otp, valid_window=1)
+        is_valid = totp.verify(request.otp, valid_window=2)  # Allow 2 time steps (±60 seconds)
 
         if not is_valid:
             # Track failed 2FA attempt
