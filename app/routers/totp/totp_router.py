@@ -88,7 +88,9 @@ async def setup_totp(
         secret=secret,
         qr_code=qr_code_base64,
         provisioning_uri=provisioning_uri,
-        message="Scan the QR code with your authenticator app or enter the secret key manually"
+        message="Scan the QR code with your authenticator app or enter the secret key manually",
+        account_name=current_user.email,
+        issuer="NFI Platform"
     )
 
 
