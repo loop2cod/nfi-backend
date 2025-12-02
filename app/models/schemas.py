@@ -149,6 +149,8 @@ class UserProfileResponse(BaseModel):
     id: int
     user_id: str
     email: EmailStr
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     phone_number: Optional[str] = None
     is_2fa_enabled: bool
     is_active: bool
@@ -196,3 +198,15 @@ class Update2FAResponse(BaseModel):
     success: bool
     message: str
     is_2fa_enabled: bool
+
+
+class UpdateNameRequest(BaseModel):
+    first_name: str
+    last_name: str
+
+
+class UpdateNameResponse(BaseModel):
+    success: bool
+    message: str
+    first_name: str
+    last_name: str

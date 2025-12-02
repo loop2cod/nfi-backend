@@ -11,7 +11,9 @@ from app.models.schemas import (
     UpdatePhoneRequest,
     UpdatePhoneResponse,
     Update2FARequest,
-    Update2FAResponse
+    Update2FAResponse,
+    UpdateNameRequest,
+    UpdateNameResponse
 )
 from app.routers.auth.auth_router import get_current_user
 import random
@@ -177,4 +179,37 @@ async def update_2fa(
         success=True,
         message=f"2FA {'enabled' if request.is_2fa_enabled else 'disabled'} successfully",
         is_2fa_enabled=request.is_2fa_enabled
+    )
+
+
+@router.put("/profile/name", response_model=UpdateNameResponse)
+async def update_name(
+    request: UpdateNameRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update user's first and last name"""
+    # Basic validation
+    if not request.first_name or not request.last_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="First name and last name are required"
+        )
+
+    if len(request.first_name) < 2 or len(request.last_name) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Names must be at least 2 characters long"
+        )
+
+    # Update names
+    current_user.first_name = request.first_name.strip()
+    current_user.last_name = request.last_name.strip()
+    db.commit()
+
+    return UpdateNameResponse(
+        success=True,
+        message="Name updated successfully",
+        first_name=request.first_name,
+        last_name=request.last_name
     )
