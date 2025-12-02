@@ -142,3 +142,57 @@ class WebhookProcessingResponse(BaseModel):
     message: str
     user_id: Optional[int] = None
     event_processed: bool = False
+
+
+# Profile Management Schemas
+class UserProfileResponse(BaseModel):
+    id: int
+    user_id: str
+    email: EmailStr
+    phone_number: Optional[str] = None
+    is_2fa_enabled: bool
+    is_active: bool
+    is_verified: bool
+    verification_status: str
+
+    class Config:
+        from_attributes = True
+
+
+class SendEmailOTPRequest(BaseModel):
+    new_email: EmailStr
+
+
+class SendEmailOTPResponse(BaseModel):
+    success: bool
+    message: str
+
+
+class VerifyEmailOTPRequest(BaseModel):
+    new_email: EmailStr
+    otp: str
+
+
+class VerifyEmailOTPResponse(BaseModel):
+    success: bool
+    message: str
+
+
+class UpdatePhoneRequest(BaseModel):
+    phone_number: str
+
+
+class UpdatePhoneResponse(BaseModel):
+    success: bool
+    message: str
+    phone_number: str
+
+
+class Update2FARequest(BaseModel):
+    is_2fa_enabled: bool
+
+
+class Update2FAResponse(BaseModel):
+    success: bool
+    message: str
+    is_2fa_enabled: bool

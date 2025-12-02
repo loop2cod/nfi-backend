@@ -16,6 +16,7 @@ from app.routers.admin.admin_auth_router import router as admin_auth_router
 from app.routers.admin.admin_management_router import router as admin_management_router
 from app.routers.bvnk.bvnk_agreement_router import router as bvnk_agreement_router
 from app.routers.bvnk.bvnk_customer_router import router as bvnk_customer_router
+from app.routers.profile.profile_router import router as profile_router
 from app.core.dfns_client import init_dfns_client
 
 # Import models to ensure they are registered with SQLAlchemy
@@ -69,6 +70,7 @@ app.include_router(admin_management_router, prefix="/admin", tags=["admin-manage
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
 app.include_router(bvnk_agreement_router, prefix="/bvnk", tags=["bvnk-agreements"])
 app.include_router(bvnk_customer_router, prefix="/bvnk", tags=["bvnk-customers"])
+app.include_router(profile_router, tags=["profile"])
 
 @app.get("/")
 def read_root():
