@@ -12,9 +12,13 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     is_2fa_enabled = Column(Boolean, default=False)
+    preferred_2fa_method = Column(String, nullable=True)  # 'email', 'sms', or 'totp'
+    two_fa_methods_priority = Column(JSON, nullable=True)  # Array of methods in priority order: ['email', 'totp', 'sms']
     two_fa_email = Column(String, nullable=True)
     two_fa_otp = Column(String, nullable=True)
     two_fa_otp_expiry = Column(DateTime(timezone=True), nullable=True)
+    totp_secret = Column(String, nullable=True)  # TOTP secret key
+    totp_enabled = Column(Boolean, default=False)  # Whether TOTP is configured
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     

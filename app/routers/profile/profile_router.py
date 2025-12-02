@@ -161,17 +161,58 @@ async def update_2fa(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Toggle 2FA on or off"""
+    """Toggle 2FA on or off with preferred method and priority order"""
     current_user.is_2fa_enabled = request.is_2fa_enabled
 
     # If enabling 2FA, set the 2FA email to current email
     if request.is_2fa_enabled:
         current_user.two_fa_email = current_user.email
+
+        # Validate and store preferred method
+        if request.preferred_method:
+            if request.preferred_method not in ['email', 'sms', 'totp']:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid 2FA method. Must be 'email', 'sms', or 'totp'"
+                )
+
+            # Validate method availability
+            if request.preferred_method == 'sms' and not current_user.phone_number:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="SMS verification requires a phone number to be configured"
+                )
+
+            current_user.preferred_2fa_method = request.preferred_method
+        else:
+            # Default to email if no method specified
+            current_user.preferred_2fa_method = 'email'
+
+        # Store methods priority if provided
+        if request.methods_priority:
+            # Validate all methods in priority list
+            valid_methods = ['email', 'sms', 'totp']
+            for method in request.methods_priority:
+                if method not in valid_methods:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid method '{method}' in priority list"
+                    )
+            current_user.two_fa_methods_priority = request.methods_priority
+        else:
+            # Create default priority: preferred method first, then others
+            available_methods = ['email']
+            if current_user.phone_number:
+                available_methods.append('sms')
+            # TOTP will be added when user sets it up
+            current_user.two_fa_methods_priority = available_methods
     else:
         # Clear 2FA related fields when disabling
         current_user.two_fa_email = None
         current_user.two_fa_otp = None
         current_user.two_fa_otp_expiry = None
+        current_user.preferred_2fa_method = None
+        current_user.two_fa_methods_priority = None
 
     db.commit()
 

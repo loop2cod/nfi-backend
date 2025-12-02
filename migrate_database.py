@@ -154,6 +154,26 @@ def migrate_database(db_path="nfi.db"):
             cursor.execute("CREATE UNIQUE INDEX ix_users_dfns_user_id ON users (dfns_user_id)")
             print("✓ dfns_user_id column added")
 
+        if 'preferred_2fa_method' not in columns:
+            print("Adding preferred_2fa_method column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN preferred_2fa_method VARCHAR")
+            print("✓ preferred_2fa_method column added")
+
+        if 'two_fa_methods_priority' not in columns:
+            print("Adding two_fa_methods_priority column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN two_fa_methods_priority JSON")
+            print("✓ two_fa_methods_priority column added")
+
+        if 'totp_secret' not in columns:
+            print("Adding totp_secret column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN totp_secret VARCHAR")
+            print("✓ totp_secret column added")
+
+        if 'totp_enabled' not in columns:
+            print("Adding totp_enabled column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN totp_enabled BOOLEAN DEFAULT 0")
+            print("✓ totp_enabled column added")
+
         # Check if customer_verification_data table exists
         cursor.execute("""
             SELECT name FROM sqlite_master

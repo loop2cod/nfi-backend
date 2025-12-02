@@ -77,6 +77,7 @@ class Enable2FAResponse(BaseModel):
 
 class Send2FAOTPRequest(BaseModel):
     email: EmailStr
+    method: Optional[str] = None  # Optional: 'email', 'sms', or 'totp' to override preferred method
 
 
 class Send2FAOTPResponse(BaseModel):
@@ -88,6 +89,7 @@ class Send2FAOTPResponse(BaseModel):
 class Verify2FAOTPRequest(BaseModel):
     email: EmailStr
     otp: str
+    method: Optional[str] = None  # 'email', 'sms', or 'totp' - helps verify the right way
 
 
 class Verify2FAOTPResponse(BaseModel):
@@ -101,6 +103,8 @@ class Verify2FAOTPResponse(BaseModel):
 class LoginWith2FAResponse(BaseModel):
     two_fa_required: bool
     two_fa_email: Optional[str] = None
+    preferred_2fa_method: Optional[str] = None
+    available_2fa_methods: Optional[List[str]] = None  # List of available fallback methods
     access_token: Optional[str] = None
     refresh_token: Optional[str] = None
     token_type: Optional[str] = None
@@ -153,6 +157,7 @@ class UserProfileResponse(BaseModel):
     last_name: Optional[str] = None
     phone_number: Optional[str] = None
     is_2fa_enabled: bool
+    totp_enabled: Optional[bool] = False
     is_active: bool
     is_verified: bool
     verification_status: str
@@ -192,6 +197,8 @@ class UpdatePhoneResponse(BaseModel):
 
 class Update2FARequest(BaseModel):
     is_2fa_enabled: bool
+    preferred_method: Optional[str] = None  # 'email', 'sms', or 'totp'
+    methods_priority: Optional[List[str]] = None  # Priority order of methods
 
 
 class Update2FAResponse(BaseModel):
