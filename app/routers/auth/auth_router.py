@@ -236,6 +236,7 @@ def get_me(current_user: User = Depends(get_current_user)):
         "sumsub_applicant_id": current_user.sumsub_applicant_id,
         "bvnk_customer_id": current_user.bvnk_customer_id,
         "verification_completed_at": current_user.verification_completed_at,
+        "profile_picture_url": current_user.profile_picture_url,
         "created_at": current_user.created_at,
     }
 
