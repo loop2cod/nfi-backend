@@ -64,6 +64,15 @@ class Settings(BaseSettings):
     BVNK_SECRET_KEY: Optional[str] = None
 
     # -------------------------
+    # Cloudflare R2 Storage
+    # -------------------------
+    R2_ACCESS_KEY_ID: Optional[str] = None
+    R2_SECRET_ACCESS_KEY: Optional[str] = None
+    R2_ACCOUNT_ID: Optional[str] = None
+    R2_BUCKET_NAME: Optional[str] = None
+    R2_PUBLIC_HOST: Optional[str] = None
+
+    # -------------------------
     # CORS
     # -------------------------
     ALLOWED_ORIGINS: List[str] = [

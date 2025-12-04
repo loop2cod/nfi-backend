@@ -2,19 +2,35 @@
 Cloudflare R2 Storage Utility
 Handles file uploads to Cloudflare R2 using AWS S3-compatible API
 """
-import os
 import uuid
 from typing import Dict
 import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
+from app.core.config import settings
 
-# R2 Configuration from environment variables
-R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
-R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
-R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID")
-R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME")
-R2_PUBLIC_HOST = os.getenv("R2_PUBLIC_HOST")
+# R2 Configuration from settings
+R2_ACCESS_KEY_ID = settings.R2_ACCESS_KEY_ID
+R2_SECRET_ACCESS_KEY = settings.R2_SECRET_ACCESS_KEY
+R2_ACCOUNT_ID = settings.R2_ACCOUNT_ID
+R2_BUCKET_NAME = settings.R2_BUCKET_NAME
+R2_PUBLIC_HOST = settings.R2_PUBLIC_HOST
+
+# Validate required environment variables
+missing_vars = []
+if not R2_ACCESS_KEY_ID:
+    missing_vars.append("R2_ACCESS_KEY_ID")
+if not R2_SECRET_ACCESS_KEY:
+    missing_vars.append("R2_SECRET_ACCESS_KEY")
+if not R2_ACCOUNT_ID:
+    missing_vars.append("R2_ACCOUNT_ID")
+if not R2_BUCKET_NAME:
+    missing_vars.append("R2_BUCKET_NAME")
+if not R2_PUBLIC_HOST:
+    missing_vars.append("R2_PUBLIC_HOST")
+
+if missing_vars:
+    raise ValueError(f"Missing required R2 environment variables: {', '.join(missing_vars)}")
 
 # Initialize S3 client configured for Cloudflare R2
 s3_client = boto3.client(
