@@ -31,7 +31,7 @@ def generate_presigned_upload_url(
     file_extension: str,
     content_type: str,
     folder: str = "profile-pictures",
-    expires_in: int = 3600
+    expires_in: int = 300  # 5 minutes
 ) -> Dict[str, str]:
     """
     Generate a presigned URL for uploading files to R2
@@ -40,17 +40,17 @@ def generate_presigned_upload_url(
         file_extension: File extension (e.g., 'jpg', 'png')
         content_type: MIME type (e.g., 'image/jpeg')
         folder: Folder path in the bucket
-        expires_in: URL expiration time in seconds
+        expires_in: URL expiration time in seconds (default 5 minutes)
 
     Returns:
-        Dictionary with uploadUrl, publicUrl, and key
+        Dictionary with upload_url, public_url, and key
     """
     # Generate unique filename
     file_id = str(uuid.uuid4())
     key = f"{folder}/{file_id}.{file_extension}"
 
     try:
-        # Generate presigned POST URL for upload
+        # Generate presigned PUT URL for upload
         upload_url = s3_client.generate_presigned_url(
             'put_object',
             Params={
@@ -58,7 +58,8 @@ def generate_presigned_upload_url(
                 'Key': key,
                 'ContentType': content_type
             },
-            ExpiresIn=expires_in
+            ExpiresIn=expires_in,
+            HttpMethod='PUT'
         )
 
         # Generate public URL (assuming bucket is publicly accessible)

@@ -16,7 +16,7 @@ from app.models.schemas import (
     UpdateNameResponse
 )
 from app.routers.auth.auth_router import get_current_user
-from app.utils.r2_storage import upload_file_directly, delete_file
+from app.utils.r2_storage import generate_presigned_upload_url, delete_file
 import random
 import string
 from datetime import datetime, timedelta
@@ -258,67 +258,109 @@ async def update_name(
     )
 
 
-class UploadAvatarResponse(BaseModel):
+class GenerateUploadUrlRequest(BaseModel):
+    file_name: str
+    file_type: str
+    file_size: int
+
+
+class GenerateUploadUrlResponse(BaseModel):
+    success: bool
+    upload_url: str
+    public_url: str
+    key: str
+
+
+class ConfirmUploadRequest(BaseModel):
+    public_url: str
+    key: str
+
+
+class ConfirmUploadResponse(BaseModel):
     success: bool
     message: str
     profile_picture_url: str
 
 
-@router.post("/profile/avatar", response_model=UploadAvatarResponse)
-async def upload_avatar(
-    file: UploadFile = File(...),
+@router.post("/profile/avatar/generate-upload-url", response_model=GenerateUploadUrlResponse)
+async def generate_avatar_upload_url(
+    request: GenerateUploadUrlRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Upload profile picture to Cloudflare R2"""
+    """Generate presigned URL for profile picture upload"""
     # Validate file type
     allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
-    if file.content_type not in allowed_types:
+    if request.file_type not in allowed_types:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid file type. Only JPEG, PNG, and WebP images are allowed."
         )
 
     # Validate file size (max 5MB)
-    file_content = await file.read()
-    if len(file_content) > 5 * 1024 * 1024:
+    if request.file_size > 5 * 1024 * 1024:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="File size must be less than 5MB"
         )
 
     # Get file extension
-    file_extension = file.filename.split(".")[-1].lower()
+    file_extension = request.file_name.split(".")[-1].lower()
     if file_extension not in ["jpg", "jpeg", "png", "webp"]:
         file_extension = "jpg"  # Default to jpg
 
+    try:
+        # Generate presigned URL
+        result = generate_presigned_upload_url(
+            file_extension=file_extension,
+            content_type=request.file_type,
+            folder="profile-pictures"
+        )
+
+        return GenerateUploadUrlResponse(
+            success=True,
+            upload_url=result["upload_url"],
+            public_url=result["public_url"],
+            key=result["key"]
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate upload URL: {str(e)}"
+        )
+
+
+@router.post("/profile/avatar/confirm", response_model=ConfirmUploadResponse)
+async def confirm_avatar_upload(
+    request: ConfirmUploadRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Confirm profile picture upload and update user profile"""
     try:
         # Delete old profile picture if exists
         if current_user.profile_picture_key:
             delete_file(current_user.profile_picture_key)
 
-        # Upload new file to R2
-        result = upload_file_directly(
-            file_content=file_content,
-            file_extension=file_extension,
-            content_type=file.content_type,
-            folder="profile-pictures"
-        )
-
         # Update user profile with new picture URL
-        current_user.profile_picture_url = result["public_url"]
-        current_user.profile_picture_key = result["key"]
+        current_user.profile_picture_url = request.public_url
+        current_user.profile_picture_key = request.key
         db.commit()
 
-        return UploadAvatarResponse(
+        return ConfirmUploadResponse(
             success=True,
             message="Profile picture uploaded successfully",
-            profile_picture_url=result["public_url"]
+            profile_picture_url=request.public_url
         )
     except Exception as e:
+        # If update fails, try to delete the uploaded file
+        try:
+            delete_file(request.key)
+        except:
+            pass
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload profile picture: {str(e)}"
+            detail=f"Failed to confirm upload: {str(e)}"
         )
 
 
