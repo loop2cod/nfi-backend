@@ -4,8 +4,12 @@ Migrates existing database to add new fields and tables:
 - user_id (NF-MMYYYY###)
 - bvnk_customer_id, bvnk_customer_created_at, bvnk_customer_status
 - Customer information fields (first_name, last_name, DOB, nationality, phone, address)
+- Email verification fields (email_verification_otp, email_verification_otp_expiry, email_verified_at)
+- Profile picture fields (profile_picture_url, profile_picture_key)
+- TOTP/2FA fields (totp_secret, totp_enabled, preferred_2fa_method, two_fa_methods_priority)
 - user_counters table
 - customer_verification_data table (multi-step verification)
+- wallets table
 """
 
 import sqlite3
@@ -183,6 +187,22 @@ def migrate_database(db_path="nfi.db"):
             print("Adding profile_picture_key column to users table...")
             cursor.execute("ALTER TABLE users ADD COLUMN profile_picture_key VARCHAR")
             print("✓ profile_picture_key column added")
+
+        # Email verification fields
+        if 'email_verification_otp' not in columns:
+            print("Adding email_verification_otp column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN email_verification_otp VARCHAR")
+            print("✓ email_verification_otp column added")
+
+        if 'email_verification_otp_expiry' not in columns:
+            print("Adding email_verification_otp_expiry column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN email_verification_otp_expiry TIMESTAMP")
+            print("✓ email_verification_otp_expiry column added")
+
+        if 'email_verified_at' not in columns:
+            print("Adding email_verified_at column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN email_verified_at TIMESTAMP")
+            print("✓ email_verified_at column added")
 
         # Check if customer_verification_data table exists
         cursor.execute("""
