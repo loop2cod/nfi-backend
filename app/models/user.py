@@ -23,6 +23,11 @@ class User(Base):
     profile_picture_key = Column(String, nullable=True)  # R2 storage key for deletion
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
+
+    # Email verification fields
+    email_verification_otp = Column(String, nullable=True)  # OTP for email verification
+    email_verification_otp_expiry = Column(DateTime(timezone=True), nullable=True)  # OTP expiry time
+    email_verified_at = Column(DateTime(timezone=True), nullable=True)  # When email was verified
     
     # Sumsub verification fields
     verification_status = Column(String, default="not_started")  # not_started, pending, completed, failed

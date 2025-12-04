@@ -218,3 +218,33 @@ class UpdateNameResponse(BaseModel):
     message: str
     first_name: str
     last_name: str
+
+
+# Registration Email Verification Schemas
+class RegistrationResponse(BaseModel):
+    success: bool
+    message: str
+    email: EmailStr
+    requires_verification: bool = True
+
+
+class VerifyRegistrationOTPRequest(BaseModel):
+    email: EmailStr
+    otp: str
+
+
+class VerifyRegistrationOTPResponse(BaseModel):
+    success: bool
+    message: str
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    token_type: Optional[str] = None
+
+
+class ResendRegistrationOTPRequest(BaseModel):
+    email: EmailStr
+
+
+class ResendRegistrationOTPResponse(BaseModel):
+    success: bool
+    message: str

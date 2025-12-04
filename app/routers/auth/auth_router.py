@@ -5,7 +5,14 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.user import User
 from app.models.login_activity import LoginActivity
-from app.models.schemas import UserCreate, LoginRequest, Token, RefreshTokenRequest, SumsubInitRequest, SumsubInitResponse, SumsubStatusResponse, LoginWith2FAResponse, Send2FAOTPRequest, Send2FAOTPResponse, Verify2FAOTPRequest, Verify2FAOTPResponse
+from app.models.schemas import (
+    UserCreate, LoginRequest, Token, RefreshTokenRequest,
+    SumsubInitRequest, SumsubInitResponse, SumsubStatusResponse,
+    LoginWith2FAResponse, Send2FAOTPRequest, Send2FAOTPResponse,
+    Verify2FAOTPRequest, Verify2FAOTPResponse,
+    RegistrationResponse, VerifyRegistrationOTPRequest, VerifyRegistrationOTPResponse,
+    ResendRegistrationOTPRequest, ResendRegistrationOTPResponse
+)
 from app.auth.auth import authenticate_user, create_access_token, create_refresh_token, verify_token, get_password_hash
 from app.auth.google_auth import get_google_oauth_client, get_google_user_info
 from app.auth.sumsub_service import generate_websdk_config
@@ -14,6 +21,7 @@ from app.core.dfns_client import init_dfns_client
 from app.core.user_id_generator import generate_user_id
 from app.models.wallet import Wallet
 from app.utils.login_tracker import extract_login_info
+from app.utils.email import send_otp_email, send_welcome_email
 import requests
 import hmac
 import hashlib
@@ -34,14 +42,6 @@ def generate_otp() -> str:
     return ''.join(random.choices(string.digits, k=6))
 
 
-def send_otp_email(email: str, otp: str):
-    """Send OTP via email - placeholder for actual email service"""
-    # TODO: Implement actual email sending logic
-    print(f"Sending OTP {otp} to {email}")
-    # This would integrate with your email service (SendGrid, SES, etc.)
-    pass
-
-
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -60,7 +60,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
-@router.post("/register", response_model=Token)
+@router.post("/register", response_model=RegistrationResponse)
 async def register(user: UserCreate, http_request: Request, db: Session = Depends(get_db)):
     # Extract login information from request
     login_info = await extract_login_info(http_request)
@@ -74,32 +74,48 @@ async def register(user: UserCreate, http_request: Request, db: Session = Depend
         # Generate unique user ID
         user_id = generate_user_id(db)
 
-        # Create new user
+        # Generate OTP for email verification
+        otp = generate_otp()
+        otp_expiry = datetime.utcnow() + timedelta(minutes=10)  # OTP valid for 10 minutes
+
+        # Create new user (not verified yet)
         hashed_password = get_password_hash(user.password)
         db_user = User(
             user_id=user_id,
             email=user.email,
-            hashed_password=hashed_password
+            hashed_password=hashed_password,
+            is_verified=False,
+            email_verification_otp=otp,
+            email_verification_otp_expiry=otp_expiry
         )
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
 
-        # Track successful registration as login activity
+        # Track registration attempt as login activity
         login_activity = LoginActivity(
             user_id=db_user.id,
-            status="success",
+            status="pending",
             method="registration",
             **login_info
         )
         db.add(login_activity)
         db.commit()
 
-        # Create tokens
-        access_token = create_access_token(data={"sub": user.email})
-        refresh_token = create_refresh_token(data={"sub": user.email})
+        # Send OTP email
+        try:
+            send_otp_email(user.email, otp, expires_in_minutes=10)
+        except Exception as email_error:
+            print(f"Failed to send OTP email: {str(email_error)}")
+            # Don't fail registration if email fails, but log it
+            # User can request resend
 
-        return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+        return {
+            "success": True,
+            "message": "Registration successful. Please check your email for the verification code.",
+            "email": user.email,
+            "requires_verification": True
+        }
 
     except ValueError as e:
         db.rollback()
@@ -107,6 +123,123 @@ async def register(user: UserCreate, http_request: Request, db: Session = Depend
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
+
+
+@router.post("/verify-registration-otp", response_model=VerifyRegistrationOTPResponse)
+async def verify_registration_otp(
+    request: VerifyRegistrationOTPRequest,
+    http_request: Request,
+    db: Session = Depends(get_db)
+):
+    """Verify email with OTP after registration"""
+    # Find user by email
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Check if already verified
+    if user.is_verified and user.email_verified_at:
+        raise HTTPException(status_code=400, detail="Email already verified")
+
+    # Check if OTP exists
+    if not user.email_verification_otp:
+        raise HTTPException(status_code=400, detail="No verification code found. Please request a new one.")
+
+    # Check if OTP is expired
+    if user.email_verification_otp_expiry and datetime.utcnow() > user.email_verification_otp_expiry:
+        raise HTTPException(status_code=400, detail="Verification code expired. Please request a new one.")
+
+    # Verify OTP
+    if user.email_verification_otp != request.otp:
+        raise HTTPException(status_code=400, detail="Invalid verification code")
+
+    try:
+        # Mark email as verified
+        user.is_verified = True
+        user.email_verified_at = datetime.utcnow()
+        user.email_verification_otp = None  # Clear OTP
+        user.email_verification_otp_expiry = None
+
+        db.commit()
+        db.refresh(user)
+
+        # Update login activity to success
+        login_info = await extract_login_info(http_request)
+        login_activity = LoginActivity(
+            user_id=user.id,
+            status="success",
+            method="email_verification",
+            **login_info
+        )
+        db.add(login_activity)
+        db.commit()
+
+        # Send welcome email
+        try:
+            send_welcome_email(user.email, user.email.split('@')[0])
+        except Exception as email_error:
+            print(f"Failed to send welcome email: {str(email_error)}")
+
+        # Create tokens
+        access_token = create_access_token(data={"sub": user.email})
+        refresh_token = create_refresh_token(data={"sub": user.email})
+
+        return {
+            "success": True,
+            "message": "Email verified successfully",
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer"
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Verification failed: {str(e)}")
+
+
+@router.post("/resend-registration-otp", response_model=ResendRegistrationOTPResponse)
+async def resend_registration_otp(
+    request: ResendRegistrationOTPRequest,
+    db: Session = Depends(get_db)
+):
+    """Resend OTP for email verification"""
+    # Find user by email
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Check if already verified
+    if user.is_verified and user.email_verified_at:
+        raise HTTPException(status_code=400, detail="Email already verified")
+
+    try:
+        # Generate new OTP
+        otp = generate_otp()
+        otp_expiry = datetime.utcnow() + timedelta(minutes=10)
+
+        # Update user with new OTP
+        user.email_verification_otp = otp
+        user.email_verification_otp_expiry = otp_expiry
+
+        db.commit()
+
+        # Send OTP email
+        try:
+            send_otp_email(user.email, otp, expires_in_minutes=10)
+        except Exception as email_error:
+            print(f"Failed to send OTP email: {str(email_error)}")
+            raise HTTPException(status_code=500, detail="Failed to send verification email")
+
+        return {
+            "success": True,
+            "message": "Verification code sent successfully"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to resend code: {str(e)}")
 
 
 @router.post("/login", response_model=LoginWith2FAResponse)
@@ -147,6 +280,24 @@ async def login(request: LoginRequest, http_request: Request, db: Session = Depe
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect password",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Check if email is verified
+    if not user.is_verified:
+        # Track failed login attempt - email not verified
+        login_activity = LoginActivity(
+            user_id=user.id,
+            status="failed",
+            method="email_password",
+            failure_reason="Email not verified",
+            **login_info
+        )
+        db.add(login_activity)
+        db.commit()
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please verify your email before logging in. Check your inbox for the verification code.",
         )
 
     # Check if 2FA is enabled

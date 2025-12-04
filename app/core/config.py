@@ -73,6 +73,16 @@ class Settings(BaseSettings):
     R2_PUBLIC_HOST: Optional[str] = None
 
     # -------------------------
+    # SMTP / Email Configuration
+    # -------------------------
+    SMTP_HOST: str = "smtp.zoho.in"
+    SMTP_PORT: int = 465
+    SMTP_USERNAME: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_FROM_EMAIL: Optional[str] = None
+    SMTP_FROM_NAME: str = "NFI Gate"
+
+    # -------------------------
     # CORS
     # -------------------------
     ALLOWED_ORIGINS: List[str] = [
