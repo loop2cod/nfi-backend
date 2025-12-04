@@ -113,10 +113,6 @@ async def verify_totp_setup(
     totp = pyotp.TOTP(current_user.totp_secret)
     is_valid = totp.verify(request.code, valid_window=2)  # Allow 2 time steps (±60 seconds) for clock drift
 
-    # Debug logging
-    print(f"[TOTP DEBUG] Verifying code: {request.code}")
-    print(f"[TOTP DEBUG] Expected code: {totp.now()}")
-    print(f"[TOTP DEBUG] Is valid: {is_valid}")
 
     if not is_valid:
         raise HTTPException(

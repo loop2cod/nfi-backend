@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.user import User
@@ -16,9 +16,11 @@ from app.models.schemas import (
     UpdateNameResponse
 )
 from app.routers.auth.auth_router import get_current_user
+from app.utils.r2_storage import upload_file_directly, delete_file
 import random
 import string
 from datetime import datetime, timedelta
+from pydantic import BaseModel
 
 router = APIRouter()
 
@@ -254,3 +256,99 @@ async def update_name(
         first_name=request.first_name,
         last_name=request.last_name
     )
+
+
+class UploadAvatarResponse(BaseModel):
+    success: bool
+    message: str
+    profile_picture_url: str
+
+
+@router.post("/profile/avatar", response_model=UploadAvatarResponse)
+async def upload_avatar(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Upload profile picture to Cloudflare R2"""
+    # Validate file type
+    allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file type. Only JPEG, PNG, and WebP images are allowed."
+        )
+
+    # Validate file size (max 5MB)
+    file_content = await file.read()
+    if len(file_content) > 5 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File size must be less than 5MB"
+        )
+
+    # Get file extension
+    file_extension = file.filename.split(".")[-1].lower()
+    if file_extension not in ["jpg", "jpeg", "png", "webp"]:
+        file_extension = "jpg"  # Default to jpg
+
+    try:
+        # Delete old profile picture if exists
+        if current_user.profile_picture_key:
+            delete_file(current_user.profile_picture_key)
+
+        # Upload new file to R2
+        result = upload_file_directly(
+            file_content=file_content,
+            file_extension=file_extension,
+            content_type=file.content_type,
+            folder="profile-pictures"
+        )
+
+        # Update user profile with new picture URL
+        current_user.profile_picture_url = result["public_url"]
+        current_user.profile_picture_key = result["key"]
+        db.commit()
+
+        return UploadAvatarResponse(
+            success=True,
+            message="Profile picture uploaded successfully",
+            profile_picture_url=result["public_url"]
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload profile picture: {str(e)}"
+        )
+
+
+@router.delete("/profile/avatar")
+async def delete_avatar(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete profile picture"""
+    if not current_user.profile_picture_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No profile picture to delete"
+        )
+
+    try:
+        # Delete from R2
+        delete_file(current_user.profile_picture_key)
+
+        # Clear from database
+        current_user.profile_picture_url = None
+        current_user.profile_picture_key = None
+        db.commit()
+
+        return {
+            "success": True,
+            "message": "Profile picture deleted successfully"
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete profile picture: {str(e)}"
+        )

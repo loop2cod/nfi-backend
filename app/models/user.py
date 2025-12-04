@@ -19,6 +19,8 @@ class User(Base):
     two_fa_otp_expiry = Column(DateTime(timezone=True), nullable=True)
     totp_secret = Column(String, nullable=True)  # TOTP secret key
     totp_enabled = Column(Boolean, default=False)  # Whether TOTP is configured
+    profile_picture_url = Column(String, nullable=True)  # Profile picture URL (R2 storage)
+    profile_picture_key = Column(String, nullable=True)  # R2 storage key for deletion
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     

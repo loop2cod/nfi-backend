@@ -174,6 +174,16 @@ def migrate_database(db_path="nfi.db"):
             cursor.execute("ALTER TABLE users ADD COLUMN totp_enabled BOOLEAN DEFAULT 0")
             print("✓ totp_enabled column added")
 
+        if 'profile_picture_url' not in columns:
+            print("Adding profile_picture_url column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN profile_picture_url VARCHAR")
+            print("✓ profile_picture_url column added")
+
+        if 'profile_picture_key' not in columns:
+            print("Adding profile_picture_key column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN profile_picture_key VARCHAR")
+            print("✓ profile_picture_key column added")
+
         # Check if customer_verification_data table exists
         cursor.execute("""
             SELECT name FROM sqlite_master

@@ -158,6 +158,7 @@ class UserProfileResponse(BaseModel):
     phone_number: Optional[str] = None
     is_2fa_enabled: bool
     totp_enabled: Optional[bool] = False
+    profile_picture_url: Optional[str] = None
     is_active: bool
     is_verified: bool
     verification_status: str
