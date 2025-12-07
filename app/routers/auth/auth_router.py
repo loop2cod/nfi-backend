@@ -265,6 +265,7 @@ async def resend_registration_otp(
 
         return {
             "success": True,
+            "otp": otp,
             "message": "Verification code sent successfully"
         }
 

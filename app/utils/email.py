@@ -45,8 +45,6 @@ def send_email(
         logger.error(f"SMTP_FROM_NAME: {SMTP_FROM_NAME}")
         raise Exception("Email service not configured")
 
-    logger.info(f"SMTP Configuration - Host: {SMTP_HOST}, Port: {SMTP_PORT}, Username: {SMTP_USERNAME[:3]}***, From: {SMTP_FROM_EMAIL}")
-
     try:
         # Test connection first
         logger.info(f"Testing SMTP connection to {SMTP_HOST}:{SMTP_PORT}")
