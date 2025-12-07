@@ -83,117 +83,26 @@ def send_otp_email(to_email: str, otp: str, expires_in_minutes: int = 10) -> Non
     <html>
     <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
-            body {{
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-                line-height: 1.6;
-                color: #0a0b0d;
-                background-color: #f8faf9;
-                margin: 0;
-                padding: 0;
-            }}
-            .container {{
-                max-width: 600px;
-                margin: 40px auto;
-                background: #ffffff;
-                border-radius: 12px;
-                overflow: hidden;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            }}
-            .header {{
-                background: linear-gradient(135deg, #84cc16 0%, #a3e635 100%);
-                padding: 40px 30px;
-                text-align: center;
-            }}
-            .header h1 {{
-                margin: 0;
-                color: #000000;
-                font-size: 28px;
-                font-weight: 700;
-            }}
-            .content {{
-                padding: 40px 30px;
-            }}
-            .otp-box {{
-                background: #f3f4f6;
-                border: 2px dashed #84cc16;
-                border-radius: 8px;
-                padding: 24px;
-                text-align: center;
-                margin: 30px 0;
-            }}
-            .otp-code {{
-                font-size: 36px;
-                font-weight: 700;
-                letter-spacing: 8px;
-                color: #84cc16;
-                font-family: 'Courier New', monospace;
-                margin: 10px 0;
-            }}
-            .otp-label {{
-                font-size: 12px;
-                color: #6b7280;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-                margin-bottom: 8px;
-            }}
-            .expiry-notice {{
-                font-size: 14px;
-                color: #ef4444;
-                margin-top: 8px;
-            }}
-            .message {{
-                color: #0a0b0d;
-                font-size: 16px;
-                margin-bottom: 20px;
-            }}
-            .footer {{
-                background: #f3f4f6;
-                padding: 20px 30px;
-                text-align: center;
-                font-size: 13px;
-                color: #6b7280;
-            }}
-            .footer a {{
-                color: #84cc16;
-                text-decoration: none;
-            }}
-            .security-notice {{
-                background: #fef3c7;
-                border-left: 4px solid #f59e0b;
-                padding: 12px 16px;
-                margin: 20px 0;
-                border-radius: 4px;
-                font-size: 14px;
-                color: #92400e;
-            }}
+            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+            .container {{ max-width: 500px; margin: 0 auto; padding: 20px; }}
+            .header {{ background: #84cc16; color: white; padding: 20px; text-align: center; }}
+            .otp-code {{ font-size: 32px; font-weight: bold; text-align: center; padding: 20px; background: #f0f0f0; border: 1px solid #ddd; margin: 20px 0; }}
+            .footer {{ text-align: center; font-size: 12px; color: #666; margin-top: 20px; }}
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header">
-                <h1>NFI Gate</h1>
+                <h2>NFI Gate</h2>
             </div>
-            <div class="content">
-                <p class="message">Hello,</p>
-                <p class="message">Thank you for signing up with NFI Gate. Please use the verification code below to complete your registration:</p>
-
-                <div class="otp-box">
-                    <div class="otp-label">Your Verification Code</div>
-                    <div class="otp-code">{otp}</div>
-                    <div class="expiry-notice">⏱️ Expires in {expires_in_minutes} minutes</div>
-                </div>
-
-                <div class="security-notice">
-                    <strong>⚠️ Security Notice:</strong> Never share this code with anyone. NFI Gate will never ask for your verification code via phone or email.
-                </div>
-
-                <p class="message">If you didn't request this verification code, please ignore this email or contact our support team.</p>
-            </div>
+            <p>Hello,</p>
+            <p>Please use this verification code to complete your registration:</p>
+            <div class="otp-code">{otp}</div>
+            <p>This code expires in {expires_in_minutes} minutes.</p>
+            <p><strong>Security:</strong> Never share this code with anyone.</p>
             <div class="footer">
                 <p>© 2024 NFI Gate. All rights reserved.</p>
-                <p>Need help? Contact us at <a href="mailto:{SMTP_FROM_EMAIL}">{SMTP_FROM_EMAIL}</a></p>
             </div>
         </div>
     </body>
@@ -203,20 +112,13 @@ def send_otp_email(to_email: str, otp: str, expires_in_minutes: int = 10) -> Non
     text_body = f"""
     NFI Gate - Email Verification
 
-    Hello,
-
-    Thank you for signing up with NFI Gate. Please use the verification code below to complete your registration:
-
     Verification Code: {otp}
 
-    This code will expire in {expires_in_minutes} minutes.
+    This code expires in {expires_in_minutes} minutes.
 
-    Security Notice: Never share this code with anyone. NFI Gate will never ask for your verification code via phone or email.
-
-    If you didn't request this verification code, please ignore this email or contact our support team.
+    Security: Never share this code with anyone.
 
     © 2024 NFI Gate. All rights reserved.
-    Need help? Contact us at {SMTP_FROM_EMAIL}
     """
 
     send_email(to_email, subject, html_body, text_body)

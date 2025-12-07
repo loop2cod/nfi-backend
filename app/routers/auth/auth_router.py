@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
+
 from app.core.database import get_db
 from app.models.user import User
 from app.models.login_activity import LoginActivity
@@ -200,6 +201,7 @@ async def verify_registration_otp(
 @router.post("/resend-registration-otp", response_model=ResendRegistrationOTPResponse)
 async def resend_registration_otp(
     request: ResendRegistrationOTPRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """Resend OTP for email verification"""
@@ -223,12 +225,8 @@ async def resend_registration_otp(
 
         db.commit()
 
-        # Send OTP email
-        try:
-            send_otp_email(user.email, otp, expires_in_minutes=10)
-        except Exception as email_error:
-            print(f"Failed to send OTP email: {str(email_error)}")
-            raise HTTPException(status_code=500, detail="Failed to send verification email")
+        # Send OTP email asynchronously
+        background_tasks.add_task(send_otp_email, user.email, otp, 10)
 
         return {
             "success": True,
