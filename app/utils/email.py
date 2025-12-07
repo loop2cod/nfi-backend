@@ -6,7 +6,10 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Optional
+import logging
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # SMTP Configuration from settings
 SMTP_HOST = settings.SMTP_HOST
@@ -35,6 +38,11 @@ def send_email(
     Raises:
         Exception: If email sending fails
     """
+    # Check if SMTP is configured
+    if not SMTP_USERNAME or not SMTP_PASSWORD or not SMTP_FROM_EMAIL:
+        logger.error("SMTP not configured. Please set SMTP_USERNAME, SMTP_PASSWORD, and SMTP_FROM_EMAIL environment variables.")
+        raise Exception("Email service not configured")
+
     try:
         # Create message
         msg = MIMEMultipart("alternative")
@@ -51,19 +59,24 @@ def send_email(
         html_part = MIMEText(html_body, "html")
         msg.attach(html_part)
 
+        logger.info(f"Sending email to {to_email} with subject: {subject}")
+
         # Connect to SMTP server and send
         # Use SMTP_SSL for port 465, SMTP with STARTTLS for port 587
         if SMTP_PORT == 465:
             with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
-                server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                server.login(str(SMTP_USERNAME), str(SMTP_PASSWORD))
                 server.send_message(msg)
         else:
             with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
                 server.starttls()  # Upgrade to secure connection
-                server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                server.login(str(SMTP_USERNAME), str(SMTP_PASSWORD))
                 server.send_message(msg)
 
+        logger.info(f"Email sent successfully to {to_email}")
+
     except Exception as e:
+        logger.error(f"Failed to send email to {to_email}: {str(e)}")
         raise Exception(f"Failed to send email: {str(e)}")
 
 
@@ -235,3 +248,19 @@ def send_welcome_email(to_email: str, user_name: str) -> None:
     """
 
     send_email(to_email, subject, html_body, text_body)
+
+
+def send_email_background(to_email: str, subject: str, html_body: str, text_body: Optional[str] = None) -> None:
+    """
+    Background task for sending emails with proper error handling.
+    This function is designed to be used with FastAPI BackgroundTasks.
+    """
+    try:
+        send_email(to_email, subject, html_body, text_body)
+        logger.info(f"Background email sent successfully to {to_email}")
+    except Exception as e:
+        logger.error(f"Background email failed to {to_email}: {str(e)}")
+        # In a production system, you might want to:
+        # - Store failed emails in a queue for retry
+        # - Send alerts to administrators
+        # - Update user status to indicate email delivery failure

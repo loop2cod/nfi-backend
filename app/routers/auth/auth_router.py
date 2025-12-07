@@ -14,6 +14,7 @@ from app.models.schemas import (
     RegistrationResponse, VerifyRegistrationOTPRequest, VerifyRegistrationOTPResponse,
     ResendRegistrationOTPRequest, ResendRegistrationOTPResponse
 )
+from pydantic import BaseModel
 from app.auth.auth import authenticate_user, create_access_token, create_refresh_token, verify_token, get_password_hash
 from app.auth.google_auth import get_google_oauth_client, get_google_user_info
 from app.auth.sumsub_service import generate_websdk_config
@@ -22,7 +23,7 @@ from app.core.dfns_client import init_dfns_client
 from app.core.user_id_generator import generate_user_id
 from app.models.wallet import Wallet
 from app.utils.login_tracker import extract_login_info
-from app.utils.email import send_otp_email, send_welcome_email
+from app.utils.email import send_otp_email, send_welcome_email, send_email_background
 import requests
 import hmac
 import hashlib
@@ -204,6 +205,7 @@ async def resend_registration_otp(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
+    """Resend OTP for email verification with improved error handling"""
     """Resend OTP for email verification"""
     # Find user by email
     user = db.query(User).filter(User.email == request.email).first()
@@ -226,7 +228,40 @@ async def resend_registration_otp(
         db.commit()
 
         # Send OTP email asynchronously
-        background_tasks.add_task(send_otp_email, user.email, otp, 10)
+        subject = "Verify Your Email - NFI Gate"
+        html_body = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 500px; margin: 0 auto; padding: 20px; }}
+                .header {{ background: #84cc16; color: white; padding: 20px; text-align: center; }}
+                .otp-code {{ font-size: 32px; font-weight: bold; text-align: center; padding: 20px; background: #f0f0f0; border: 1px solid #ddd; margin: 20px 0; }}
+                .footer {{ text-align: center; font-size: 12px; color: #666; margin-top: 20px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>NFI Gate</h2>
+                </div>
+                <p>Hello,</p>
+                <p>Please use this verification code to complete your registration:</p>
+                <div class="otp-code">{otp}</div>
+                <p>This code expires in 10 minutes.</p>
+                <p><strong>Security:</strong> Never share this code with anyone.</p>
+                <div class="footer">
+                    <p>© 2024 NFI Gate. All rights reserved.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        text_body = f"NFI Gate - Email Verification\n\nVerification Code: {otp}\n\nThis code expires in 10 minutes.\n\nSecurity: Never share this code with anyone.\n\n© 2024 NFI Gate. All rights reserved."
+
+        background_tasks.add_task(send_email_background, user.email, subject, html_body, text_body)
 
         return {
             "success": True,
@@ -789,3 +824,18 @@ async def verify_2fa_otp(request: Verify2FAOTPRequest, http_request: Request, db
         refresh_token=refresh_token,
         token_type="bearer"
     )
+
+
+class TestEmailRequest(BaseModel):
+    email: str
+    otp: str = "123456"
+
+
+@router.post("/test-email")
+def test_email(request: TestEmailRequest):
+    """Test endpoint to manually send an email for debugging purposes"""
+    try:
+        send_otp_email(request.email, request.otp, expires_in_minutes=5)
+        return {"success": True, "message": f"Test email sent to {request.email}"}
+    except Exception as e:
+        return {"success": False, "message": f"Failed to send email: {str(e)}"}
