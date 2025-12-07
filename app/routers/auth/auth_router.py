@@ -116,6 +116,7 @@ async def register(user: UserCreate, http_request: Request, db: Session = Depend
             "success": True,
             "message": "Registration successful. Please check your email for the verification code.",
             "email": user.email,
+            "otp": otp,
             "requires_verification": True
         }
 
@@ -260,12 +261,11 @@ async def resend_registration_otp(
         </html>
         """
         text_body = f"NFI Gate - Email Verification\n\nVerification Code: {otp}\n\nThis code expires in 10 minutes.\n\nSecurity: Never share this code with anyone.\n\n© 2024 NFI Gate. All rights reserved."
-
+        print("Sending", otp)
         background_tasks.add_task(send_email_background, user.email, subject, html_body, text_body)
 
         return {
             "success": True,
-            "otp": otp,
             "message": "Verification code sent successfully"
         }
 
