@@ -23,7 +23,7 @@ from app.core.dfns_client import init_dfns_client
 from app.core.user_id_generator import generate_user_id
 from app.models.wallet import Wallet
 from app.utils.login_tracker import extract_login_info
-from app.utils.email import send_otp_email, send_welcome_email, send_email_background
+from app.utils.email import send_otp_email, send_welcome_email, send_email_background, test_smtp_connection
 import requests
 import hmac
 import hashlib
@@ -839,3 +839,9 @@ def test_email(request: TestEmailRequest):
         return {"success": True, "message": f"Test email sent to {request.email}"}
     except Exception as e:
         return {"success": False, "message": f"Failed to send email: {str(e)}"}
+
+
+@router.get("/smtp-status")
+def smtp_status():
+    """Check SMTP configuration and connection status"""
+    return test_smtp_connection()
