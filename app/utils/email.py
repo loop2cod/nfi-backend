@@ -38,12 +38,26 @@ def send_email(
     Raises:
         Exception: If email sending fails
     """
+    # Try Resend first if configured
+    if settings.RESEND_API_KEY:
+        try:
+            from app.utils.resend_client import send_resend_email
+            logger.info("Attempting to send email via Resend")
+            send_resend_email(to_email, subject, html_body, text_body)
+            logger.info(f"Email sent successfully via Resend to {to_email}")
+            return
+        except Exception as e:
+            logger.error(f"Resend sending failed: {str(e)}")
+            logger.info("Falling back to SMTP")
+            # Fall through to SMTP
+
     # Check if SMTP is configured
     if not SMTP_USERNAME or not SMTP_PASSWORD or not SMTP_FROM_EMAIL:
         logger.error("SMTP not configured. Please set SMTP_USERNAME, SMTP_PASSWORD, and SMTP_FROM_EMAIL environment variables.")
         logger.error(f"SMTP_HOST: {SMTP_HOST}, SMTP_PORT: {SMTP_PORT}")
         logger.error(f"SMTP_FROM_NAME: {SMTP_FROM_NAME}")
-        raise Exception("Email service not configured")
+        # If Resend also failed (or wasn't configured), then we have no way to send email
+        raise Exception("Email service not configured (neither Resend nor SMTP)")
 
     try:
         # Test connection first
