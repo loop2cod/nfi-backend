@@ -83,6 +83,11 @@ class Settings(BaseSettings):
     SMTP_FROM_NAME: str = "NFI Gate"
 
     # -------------------------
+    # Resend Configuration
+    # -------------------------
+    RESEND_API_KEY: Optional[str] = None
+
+    # -------------------------
     # CORS
     # -------------------------
     ALLOWED_ORIGINS: List[str] = [
